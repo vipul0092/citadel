@@ -210,7 +210,9 @@ func (m *TUI) View() string {
 
 	logInnerW := m.logPanelW - 2
 	m.logVP.Height = innerH
-	logBlock := borderStyle.Width(logInnerW).Height(innerH).Render(m.logVP.View())
+	scrollbar := citadelstyle.Scrollbar(innerH, m.logVP.TotalLineCount(), m.logVP.ScrollPercent())
+	logContent := lipgloss.JoinHorizontal(lipgloss.Top, m.logVP.View(), scrollbar)
+	logBlock := borderStyle.Width(logInnerW).Height(innerH).Render(logContent)
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, peerBlock, " ", logBlock)
 
@@ -234,8 +236,9 @@ func (m *TUI) relayout() {
 	m.peerPanelW = m.width / 3
 	m.logPanelW = m.width - m.peerPanelW - 1 // 1-char gap between panes
 
-	// Viewport content fits inside the rounded border (1 char on each edge)
-	m.logVP.Width = max(1, m.logPanelW-2)
+	// Viewport content fits inside the rounded border (1 char on each edge),
+	// minus 1 for the scrollbar gutter.
+	m.logVP.Width = max(1, m.logPanelW-3)
 	m.logVP.Height = max(1, m.bodyH-2)
 	m.logVP.SetContent(strings.Join(m.logLines, "\n"))
 	m.logVP.GotoBottom()

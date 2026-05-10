@@ -624,11 +624,13 @@ func (m *TUI) viewChat() string {
 		chatH = 1
 	}
 
-	m.chatVP.Width = m.width - 4
+	m.chatVP.Width = m.width - 5
 	m.chatVP.Height = chatH
 	m.chatVP.SetContent(strings.Join(m.messages, "\n"))
 
-	chatPane := chatBorder.Width(m.width - 4).Height(chatH).Render(m.chatVP.View())
+	scrollbar := citadelstyle.Scrollbar(chatH, m.chatVP.TotalLineCount(), m.chatVP.ScrollPercent())
+	chatContent := lipgloss.JoinHorizontal(lipgloss.Top, m.chatVP.View(), scrollbar)
+	chatPane := chatBorder.Width(m.width - 4).Height(chatH).Render(chatContent)
 	gamePaneLine := gamePaneStyle.Render("  [game: not connected]")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, chatPane, gamePaneLine, inputBox)
@@ -651,7 +653,7 @@ func (m *TUI) relayout() {
 	if chatH < 1 {
 		chatH = 1
 	}
-	m.chatVP = viewport.New(m.width-4, chatH)
+	m.chatVP = viewport.New(m.width-5, chatH)
 	m.chatVP.SetContent(strings.Join(m.messages, "\n"))
 	m.chatVP.GotoBottom()
 }
