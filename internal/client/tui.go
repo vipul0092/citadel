@@ -391,7 +391,7 @@ func (m *TUI) handleKey(msg tea.KeyMsg) []tea.Cmd {
 					m.suggIdx = len(suggestions) - 1
 				}
 			} else {
-				m.chatVP.LineUp(1)
+				m.chatVP.ScrollUp(1)
 			}
 		case tea.KeyDown:
 			suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
@@ -401,12 +401,12 @@ func (m *TUI) handleKey(msg tea.KeyMsg) []tea.Cmd {
 					m.suggIdx = 0
 				}
 			} else {
-				m.chatVP.LineDown(1)
+				m.chatVP.ScrollDown(1)
 			}
 		case tea.KeyPgUp:
-			m.chatVP.LineUp(5)
+			m.chatVP.ScrollUp(5)
 		case tea.KeyPgDown:
-			m.chatVP.LineDown(5)
+			m.chatVP.ScrollDown(5)
 		default:
 			m.suggIdx = 0
 		}

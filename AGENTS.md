@@ -34,8 +34,13 @@ Toolchain: Go 1.25.0 managed via Mise (`mise install` before first build).
 
 ## Build
 
+All workflows go through Mise tasks defined in `mise.toml`:
+
 ```
-go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel ./cmd/citadel
+mise run build   # build the citadel binary with version timestamp
+mise run test    # run all tests
+mise run lint    # run golangci-lint
+mise run clean   # remove build artifacts
 ```
 
-This produces the `citadel` binary in the repo root. Always use this command after code changes — `go build ./...` only checks compilation and does not produce the binary.
+**Quality gate**: every change must pass `mise run build`, `mise run test`, and `mise run lint` before it is considered complete. Run all three after any code change.

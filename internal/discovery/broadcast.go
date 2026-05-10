@@ -39,7 +39,7 @@ func BroadcastPresence(ctx context.Context, name string, port int, listenIP stri
 						continue
 					}
 					_, _ = conn.Write(payload)
-					conn.Close()
+					_ = conn.Close()
 				}
 			case <-ctx.Done():
 				return
@@ -100,7 +100,7 @@ func BrowseBroadcast(ctx context.Context) <-chan ServerInfo {
 		}
 		go func() {
 			<-ctx.Done()
-			conn.Close()
+			_ = conn.Close()
 		}()
 
 		seen := map[string]bool{}

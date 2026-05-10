@@ -72,9 +72,23 @@ See [`docs/README.md`](docs/README.md) for the full wiki index.
 ## Build from source
 
 ```sh
-mise install   # installs Go (one-time)
-go test ./...  # run all tests
+mise install   # installs Go + golangci-lint (one-time)
+```
 
+All common workflows are available as `mise run` tasks:
+
+```sh
+mise run build           # build the citadel binary with version timestamp
+mise run build:linux     # cross-compile for Linux amd64
+mise run build:windows   # cross-compile for Windows amd64
+mise run test            # run all tests
+mise run lint            # run golangci-lint
+mise run clean           # remove build artifacts
+```
+
+Manual equivalents (if you prefer):
+
+```sh
 # Build with version timestamp embedded (recommended):
 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel ./cmd/citadel
 
@@ -83,10 +97,4 @@ go build -o citadel ./cmd/citadel
 
 # Verify version:
 ./citadel version   # → v0.1.0-20260510-135000
-```
-
-Cross-compile (timestamp works the same way):
-```sh
-GOOS=linux  GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel-linux  ./cmd/citadel
-GOOS=windows GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel.exe ./cmd/citadel
 ```

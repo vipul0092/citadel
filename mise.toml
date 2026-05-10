@@ -1,2 +1,27 @@
 [tools]
 go = "1.25.0"
+"golangci-lint" = "2"
+
+[tasks.build]
+description = "Build the citadel binary"
+run = 'go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel ./cmd/citadel'
+
+[tasks.test]
+description = "Run all tests"
+run = "go test ./... -count=1 -timeout 30s"
+
+[tasks.lint]
+description = "Run golangci-lint"
+run = "golangci-lint run ./..."
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = "rm -f citadel citadel-linux citadel-windows.exe"
+
+[tasks."build:linux"]
+description = "Cross-compile for Linux amd64"
+run = 'GOOS=linux GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel-linux ./cmd/citadel'
+
+[tasks."build:windows"]
+description = "Cross-compile for Windows amd64"
+run = 'GOOS=windows GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel-windows.exe ./cmd/citadel'

@@ -88,7 +88,7 @@ func LocalIPv4() string {
 	if err != nil {
 		return "127.0.0.1"
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	host, _, _ := net.SplitHostPort(conn.LocalAddr().String())
 	return host
 }

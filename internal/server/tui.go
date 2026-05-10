@@ -143,7 +143,7 @@ func (m *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.suggIdx = len(suggestions) - 1
 				}
 			} else {
-				m.logVP.LineUp(1)
+				m.logVP.ScrollUp(1)
 			}
 
 		case tea.KeyDown:
@@ -154,13 +154,13 @@ func (m *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.suggIdx = 0
 				}
 			} else {
-				m.logVP.LineDown(1)
+				m.logVP.ScrollDown(1)
 			}
 
 		case tea.KeyPgUp:
-			m.logVP.LineUp(5)
+			m.logVP.ScrollUp(5)
 		case tea.KeyPgDown:
-			m.logVP.LineDown(5)
+			m.logVP.ScrollDown(5)
 
 		default:
 			m.suggIdx = 0

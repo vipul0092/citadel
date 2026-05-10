@@ -58,7 +58,7 @@ func (c *clientConn) closeConn() {
 // serve performs the hello/welcome handshake then runs read+write goroutines.
 // Blocks until the client disconnects.
 func (c *clientConn) serve() {
-	defer c.conn.Close()
+	defer func() { _ = c.conn.Close() }()
 
 	// hello handshake with a tight deadline
 	if err := c.conn.SetDeadline(time.Now().Add(helloTimeout)); err != nil {
