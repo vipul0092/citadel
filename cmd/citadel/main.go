@@ -5,16 +5,11 @@ import (
 	"os"
 )
 
-const version = "0.1.0"
-
-// buildTime is injected at build time:
-//
-//	go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" ./cmd/citadel
-var buildTime = "dev"
+const version = "0.0.0"
 
 // versionString returns the full version label shown in TUI headers and `citadel version`.
 func versionString() string {
-	return fmt.Sprintf("v%s-%s", version, buildTime)
+	return "v" + version
 }
 
 func main() {

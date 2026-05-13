@@ -1,6 +1,7 @@
 package completer
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -10,6 +11,7 @@ var (
 	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
 	normalStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	overflowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
 )
 
 // Compute returns matching completions for input.
@@ -67,7 +69,56 @@ func Complete(input string, suggestions []string, idx int) string {
 	return sugg + " "
 }
 
+// Bar renders suggestions as a single horizontal line that fits within maxWidth.
+// Returns an empty string when there are no suggestions; the caller always
+// reserves a line for it so layout never shifts.
+func Bar(suggestions []string, idx, maxWidth int) string {
+	if len(suggestions) == 0 {
+		return ""
+	}
+	if idx >= len(suggestions) {
+		idx = 0
+	}
+
+	const sep = "  "
+	var parts []string
+	used := 0
+	shown := 0
+
+	for i, s := range suggestions {
+		var rendered string
+		if i == idx {
+			rendered = selectedStyle.Render("▶ " + s)
+		} else {
+			rendered = normalStyle.Render("  " + s)
+		}
+		// Use raw width (prefix + suggestion) for width accounting.
+		raw := len("  ") + len(s)
+		needed := raw
+		if shown > 0 {
+			needed += len(sep)
+		}
+		if maxWidth > 0 && used+needed > maxWidth {
+			remaining := len(suggestions) - shown
+			if remaining > 0 {
+				parts = append(parts, overflowStyle.Render(fmt.Sprintf("… (+%d)", remaining)))
+			}
+			break
+		}
+		if shown > 0 {
+			parts = append(parts, sep)
+			used += len(sep)
+		}
+		parts = append(parts, rendered)
+		used += raw
+		shown++
+	}
+
+	return strings.Join(parts, "")
+}
+
 // Lines returns styled rows to embed above the input line inside the input box.
+// Deprecated: use Bar for the single-line horizontal layout.
 // Returns nil when suggestions is empty.
 func Lines(suggestions []string, idx int) []string {
 	if len(suggestions) == 0 {

@@ -468,7 +468,11 @@ func (m *TUI) handleNetMsg(env *proto.Envelope) {
 			return
 		}
 		if env.From == "server" {
-			m.addMessage(serverSayStyle.Render(fmt.Sprintf("[%s] <server> %s", ts, p.Text)))
+			serverName := ""
+			if m.conn != nil {
+				serverName = m.conn.ServerName
+			}
+			m.addMessage(fmt.Sprintf("[%s] ", ts) + serverSayStyle.Render("⚔ "+serverName+":") + " " + normalStyle.Render(p.Text))
 		} else if env.To != "" {
 			// direct message — color the sender name
 			sender := citadelstyle.NameStyle(env.From).Render(env.From)
@@ -609,13 +613,14 @@ func (m *TUI) viewChat() string {
 
 	suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
 
-	// Build input box: suggestion rows stacked above the actual input line, inside one border.
-	inputLines := completer.Lines(suggestions, m.suggIdx)
-	inputLines = append(inputLines, citadelstyle.NameStyle(myName).Render(myName)+statusStyle.Render(" > ")+m.chatInput.View())
+	// Input box: always 2 content lines (suggestion bar + input), fixed height.
+	suggBar := completer.Bar(suggestions, m.suggIdx, m.width-6)
+	inputLine := citadelstyle.NameStyle(myName).Render(myName) + statusStyle.Render(" > ") + m.chatInput.View()
+	inputLines := []string{suggBar, inputLine}
 	inputBox := inputBorder.Width(m.width - 4).Render(strings.Join(inputLines, "\n"))
 
-	// inputBoxH = content lines + top/bottom border
-	inputBoxH := 1 + 2 + completer.ExtraHeight(suggestions)
+	// inputBoxH is always fixed: 2 content lines + top/bottom border
+	const inputBoxH = 4
 
 	// Fixed heights: header=1, game placeholder=1, separators=2
 	const gamePaneH = 1
@@ -648,7 +653,7 @@ func (m *TUI) viewDisconnected() string {
 // --- helpers ---
 
 func (m *TUI) relayout() {
-	inputH := 3
+	inputH := 4 // border + suggestion bar + input + border
 	chatH := m.height - 4 - inputH
 	if chatH < 1 {
 		chatH = 1

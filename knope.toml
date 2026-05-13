@@ -1,0 +1,30 @@
+[package]
+versioned_files = [
+    "go.mod",
+    { path = "cmd/citadel/main.go", regex = 'const version = "(?<version>\d+\.\d+\.\d+)"' },
+]
+changelog = "CHANGELOG.md"
+ignore_go_major_versioning = true
+
+[[workflows]]
+name = "release"
+help_text = "Bump version, update changelog, commit, and tag (no push)"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+[[workflows.steps]]
+type = "Command"
+command = "git add -A && git commit -m \"chore: release v$version\""
+
+[[workflows.steps]]
+type = "Command"
+command = "git tag v$version"
+
+[[workflows]]
+name = "document-change"
+help_text = "Create a changeset file describing a change"
+
+[[workflows.steps]]
+type = "CreateChangeFile"
+

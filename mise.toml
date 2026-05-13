@@ -1,10 +1,11 @@
 [tools]
 go = "1.25.0"
 "golangci-lint" = "2"
+"github:knope-dev/knope" = "knope/v0.22.4"
 
 [tasks.build]
 description = "Build the citadel binary"
-run = 'go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel ./cmd/citadel'
+run = 'go build -o citadel ./cmd/citadel'
 
 [tasks.test]
 description = "Run all tests"
@@ -18,10 +19,22 @@ run = "golangci-lint run ./..."
 description = "Remove build artifacts"
 run = "rm -f citadel citadel-linux citadel-windows.exe"
 
+[tasks.release]
+description = "Bump version, update changelog, commit and tag locally"
+run = "knope release"
+
+[tasks."release:dry-run"]
+description = "Preview what the next release would do"
+run = "knope release --dry-run"
+
+[tasks.changeset]
+description = "Document a change (creates a changeset file)"
+run = "knope document-change"
+
 [tasks."build:linux"]
 description = "Cross-compile for Linux amd64"
-run = 'GOOS=linux GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel-linux ./cmd/citadel'
+run = 'GOOS=linux GOARCH=amd64 go build -o citadel-linux ./cmd/citadel'
 
 [tasks."build:windows"]
 description = "Cross-compile for Windows amd64"
-run = 'GOOS=windows GOARCH=amd64 go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel-windows.exe ./cmd/citadel'
+run = 'GOOS=windows GOARCH=amd64 go build -o citadel-windows.exe ./cmd/citadel'

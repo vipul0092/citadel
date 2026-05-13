@@ -200,9 +200,8 @@ func (m *TUI) View() string {
 	}
 	suggestions := completer.Compute(m.cmdInput.Value(), serverCommands, serverNameCmds, m.peerNames())
 
-	// Shrink body panels to make room for suggestion rows inside the input box.
 	innerW := m.peerPanelW - 2
-	innerH := m.bodyH - completer.ExtraHeight(suggestions) - 2
+	innerH := m.bodyH - 2
 	if innerH < 1 {
 		innerH = 1
 	}
@@ -216,9 +215,9 @@ func (m *TUI) View() string {
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, peerBlock, " ", logBlock)
 
-	// Input box: suggestion rows (if any) stacked above the command input line.
-	inputLines := completer.Lines(suggestions, m.suggIdx)
-	inputLines = append(inputLines, m.cmdInput.View())
+	// Input box: always 2 content lines (suggestion bar + command input).
+	suggBar := completer.Bar(suggestions, m.suggIdx, m.width-6)
+	inputLines := []string{suggBar, m.cmdInput.View()}
 	inputBox := inputStyle.Width(m.width - 4).Render(strings.Join(inputLines, "\n"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, inputBox)
@@ -227,8 +226,8 @@ func (m *TUI) View() string {
 // relayout recomputes pane dimensions and resizes the viewport.
 // Must be the only place that sets m.logVP.Width / m.logVP.Height.
 func (m *TUI) relayout() {
-	// Fixed heights: header=1, input box=3 (border+content+border), separators=2
-	m.bodyH = m.height - 1 - 3 - 2
+	// Fixed heights: header=1, input box=4 (border+suggbar+input+border), separators=2
+	m.bodyH = m.height - 1 - 4 - 2
 	if m.bodyH < 3 {
 		m.bodyH = 3
 	}
@@ -265,7 +264,7 @@ func (m *TUI) applyHubEvent(ev HubEvent) {
 	case EvDirect:
 		m.appendLog(logEvStyle.Render(fmt.Sprintf("[%s] →", ts)) + " " + named(ev.Name) + logEvStyle.Render(" (to ") + named(ev.Target) + logEvStyle.Render("): ") + logChatStyle.Render(ev.Text))
 	case EvSay:
-		m.appendLog(logEvStyle.Render(fmt.Sprintf("[%s]", ts)) + " " + serverSayStyle.Render("<server>") + logChatStyle.Render(": "+ev.Text))
+		m.appendLog(logEvStyle.Render(fmt.Sprintf("[%s]", ts)) + " " + serverSayStyle.Render("⚔ "+m.serverName) + logChatStyle.Render(": "+ev.Text))
 	case EvMotd:
 		m.appendLog(logEvStyle.Render(fmt.Sprintf("[%s] * motd updated: %s", ts, ev.Text)))
 	}

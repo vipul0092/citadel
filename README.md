@@ -25,7 +25,7 @@ go build -o citadel ./cmd/citadel
 
 `citadel connect` tries three paths in parallel:
 1. **Localhost probe** (300ms) — instant connection for same-machine use
-2. **UDP broadcast + mDNS** — finds servers within ~2s; broadcast works on home networks even when mDNS multicast is blocked by AP isolation
+2. **UDP broadcast + mDNS** — finds servers within ~10s; broadcast works on home networks even when mDNS multicast is blocked by AP isolation
 3. **`--server` flag** — explicit address, always works (VPNs, different subnets, etc.)
 
 ## Usage

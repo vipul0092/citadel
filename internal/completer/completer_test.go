@@ -1,6 +1,7 @@
 package completer
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -90,15 +91,43 @@ func TestCompleteEmptySuggestions(t *testing.T) {
 	}
 }
 
-func TestExtraHeightEmpty(t *testing.T) {
-	if h := ExtraHeight(nil); h != 0 {
-		t.Errorf("got %d, want 0", h)
+func TestBarEmpty(t *testing.T) {
+	got := Bar(nil, 0, 80)
+	if got != "" {
+		t.Errorf("got %q, want empty", got)
 	}
 }
 
-func TestExtraHeightWithSuggestions(t *testing.T) {
-	// 3 suggestions + 1 hint line = 4
-	if h := ExtraHeight([]string{"a", "b", "c"}); h != 4 {
-		t.Errorf("got %d, want 4", h)
+func TestBarRendersAll(t *testing.T) {
+	got := Bar([]string{"/help", "/quit"}, 0, 80)
+	if !strings.Contains(got, "/help") || !strings.Contains(got, "/quit") {
+		t.Errorf("bar should contain both suggestions, got %q", got)
+	}
+}
+
+func TestBarSelectedMarker(t *testing.T) {
+	got := Bar([]string{"/help", "/quit"}, 0, 80)
+	if !strings.Contains(got, "▶") {
+		t.Error("bar should contain ▶ marker for selected item")
+	}
+}
+
+func TestBarOverflow(t *testing.T) {
+	suggs := []string{"/help", "/msg", "/quit", "/who"}
+	// Use a very narrow width to force truncation
+	got := Bar(suggs, 0, 20)
+	if !strings.Contains(got, "…") {
+		t.Errorf("narrow bar should show overflow indicator, got %q", got)
+	}
+	if !strings.Contains(got, "(+") {
+		t.Errorf("narrow bar should show remaining count, got %q", got)
+	}
+}
+
+func TestBarIdxWraps(t *testing.T) {
+	// idx beyond range should wrap to 0
+	got := Bar([]string{"/help", "/quit"}, 5, 80)
+	if !strings.Contains(got, "▶") {
+		t.Error("bar should still render with wrapped index")
 	}
 }
