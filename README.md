@@ -87,16 +87,21 @@ All common workflows are available as `mise run` tasks:
 
 ```sh
 mise run build           # build the citadel binary
-mise run build:linux     # cross-compile for Linux amd64
-mise run build:windows   # cross-compile for Windows amd64
 mise run test            # run all tests
 mise run lint            # run golangci-lint
 mise run clean           # remove build artifacts
 ```
 
+## Install via Homebrew
+
+```sh
+brew tap vipul0092/citadel https://github.com/vipul0092/citadel
+brew install citadel
+```
+
 ## Releasing
 
-Versions are managed by [Knope](https://knope.tech/) using changeset files.
+Versions are managed by [Knope](https://knope.tech/) using changeset files. Binaries are published by [GoReleaser](https://goreleaser.com/) via GitHub Actions.
 
 ```sh
 # 1. Document a change (interactive — pick major/minor/patch/tweak)
@@ -108,6 +113,6 @@ mise run release:dry-run
 # 3. Cut the release (bumps version, updates CHANGELOG, commits, tags locally)
 mise run release
 
-# 4. Push when you're ready
-git push origin main --tags
+# 4. Push — triggers CI which builds binaries and updates the Homebrew formula
+git push && git push --tags
 ```

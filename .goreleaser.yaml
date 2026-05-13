@@ -1,0 +1,29 @@
+version: 2
+
+builds:
+  - binary: citadel
+    main: ./cmd/citadel
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "citadel-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  disable: true # managed by Knope via CHANGELOG.md
+
+homebrew_casks:
+  - name: citadel
+    repository:
+      owner: vipul0092
+      name: citadel
+      directory: Casks
+    homepage: "https://github.com/vipul0092/citadel"
+    description: "Terminal LAN chat — auto-discover servers, connect, and chat from the terminal"
