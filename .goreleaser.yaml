@@ -21,9 +21,9 @@ changelog:
 
 homebrew_casks:
   - name: citadel
+    directory: Casks
     repository:
       owner: vipul0092
       name: citadel
-      directory: Casks
     homepage: "https://github.com/vipul0092/citadel"
     description: "Terminal LAN chat — auto-discover servers, connect, and chat from the terminal"
