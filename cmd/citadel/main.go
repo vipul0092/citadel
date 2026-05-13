@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const version = "0.0.4"
+const version = "0.0.5"
 
 // versionString returns the full version label shown in TUI headers and `citadel version`.
 func versionString() string {

@@ -1,5 +1,11 @@
 # citadel
 
+## 0.0.5 (2026-05-13)
+
+### Updates
+
+- Add xattr hook in release to remove quarantine property
+
 ## 0.0.4 (2026-05-13)
 
 ### Updates
