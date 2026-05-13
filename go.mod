@@ -1,4 +1,4 @@
-module github.com/vipul0092/citadel // v0.0.0
+module github.com/vipul0092/citadel // v0.0.1
 
 go 1.25.0
 

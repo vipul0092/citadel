@@ -5,6 +5,9 @@ versioned_files = [
 ]
 changelog = "CHANGELOG.md"
 ignore_go_major_versioning = true
+extra_changelog_sections = [
+    { types = ["tweak"], name = "Updates" },
+]
 
 [[workflows]]
 name = "release"
@@ -15,7 +18,11 @@ type = "PrepareRelease"
 
 [[workflows.steps]]
 type = "Command"
-command = "git add -A && git commit -m \"chore: release v$version\""
+command = "git add -A"
+
+[[workflows.steps]]
+type = "Command"
+command = "git commit -m 'chore: release v$version'"
 
 [[workflows.steps]]
 type = "Command"
