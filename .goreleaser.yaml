@@ -27,3 +27,7 @@ homebrew_casks:
       name: citadel
     homepage: "https://github.com/vipul0092/citadel"
     description: "Terminal LAN chat — auto-discover servers, connect, and chat from the terminal"
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/citadel"]
