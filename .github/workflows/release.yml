@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,11 +16,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - uses: goreleaser/goreleaser-action@v6
+      - name: Install Knope
+        uses: knope-dev/action@v2.1.2
+        with:
+          version: 0.22.4
+
+      - name: Run Knope release
+        run: knope release
+        id: knope
+        continue-on-error: true
+
+      - name: Push release commit and tag
+        if: steps.knope.outcome == 'success'
+        run: git push && git push --tags
+
+      - name: Run GoReleaser
+        if: steps.knope.outcome == 'success'
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
