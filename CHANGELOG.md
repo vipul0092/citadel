@@ -1,5 +1,11 @@
 # citadel
 
+## 0.0.4 (2026-05-13)
+
+### Updates
+
+- Update the action to do the actual release and brew release as well
+
 ## 0.0.3 (2026-05-13)
 
 ### Fixes
