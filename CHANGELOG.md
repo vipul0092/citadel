@@ -1,5 +1,11 @@
 # citadel
 
+## 0.0.3 (2026-05-13)
+
+### Fixes
+
+- Fix GoReleaser configuration for automated releases
+
 ## 0.0.2 (2026-05-13)
 
 ### Updates
