@@ -2,14 +2,22 @@
 
 Terminal LAN client/server: auto-discover a named server on your local network, connect with a unique handle, chat, and (eventually) play games — all from the terminal.
 
+## Prerequisites
+
+Install [Mise](https://mise.jdx.dev/getting-started.html) (tool version manager):
+
+```sh
+curl https://mise.run | sh   # macOS / Linux
+```
+
 ## Quickstart
 
 ```sh
-# 1. Install Go via Mise (one-time per machine)
+# 1. Install toolchain (one-time per machine)
 mise install
 
 # 2. Build
-go build -o citadel ./cmd/citadel
+mise run build
 
 # 3a. Start the server (machine A)
 ./citadel server --name "Throne"
@@ -72,13 +80,13 @@ See [`docs/README.md`](docs/README.md) for the full wiki index.
 ## Build from source
 
 ```sh
-mise install   # installs Go + golangci-lint (one-time)
+mise install   # installs Go + golangci-lint + knope (one-time)
 ```
 
 All common workflows are available as `mise run` tasks:
 
 ```sh
-mise run build           # build the citadel binary with version timestamp
+mise run build           # build the citadel binary
 mise run build:linux     # cross-compile for Linux amd64
 mise run build:windows   # cross-compile for Windows amd64
 mise run test            # run all tests
@@ -86,15 +94,20 @@ mise run lint            # run golangci-lint
 mise run clean           # remove build artifacts
 ```
 
-Manual equivalents (if you prefer):
+## Releasing
+
+Versions are managed by [Knope](https://knope.tech/) using changeset files.
 
 ```sh
-# Build with version timestamp embedded (recommended):
-go build -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S)" -o citadel ./cmd/citadel
+# 1. Document a change (interactive — pick major/minor/patch/tweak)
+mise run changeset
 
-# Quick build during development (shows "v0.1.0-dev" in header):
-go build -o citadel ./cmd/citadel
+# 2. Preview what the next release would do
+mise run release:dry-run
 
-# Verify version:
-./citadel version   # → v0.1.0-20260510-135000
+# 3. Cut the release (bumps version, updates CHANGELOG, commits, tags locally)
+mise run release
+
+# 4. Push when you're ready
+git push origin main --tags
 ```
