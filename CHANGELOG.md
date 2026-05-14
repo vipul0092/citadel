@@ -1,5 +1,11 @@
 # citadel
 
+## 0.0.6 (2026-05-14)
+
+### Updates
+
+- Add `update` command for self updating citadel
+
 ## 0.0.5 (2026-05-13)
 
 ### Updates
