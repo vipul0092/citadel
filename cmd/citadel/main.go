@@ -22,6 +22,8 @@ func main() {
 		runServer(os.Args[2:])
 	case "connect":
 		runClient(os.Args[2:])
+	case "update":
+		runUpdate()
 	case "version", "--version", "-v":
 		fmt.Println(versionString())
 	default:
@@ -36,7 +38,8 @@ func printUsage() {
 Subcommands:
   server   Start a Citadel server
   connect  Connect to a Citadel server
-  version  Print version and build timestamp
+  update   Update citadel to the latest version (requires Homebrew)
+  version  Print version
 
 Server flags:
   --name         Server display name (required)

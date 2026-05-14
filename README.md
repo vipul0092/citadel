@@ -60,6 +60,14 @@ citadel connect [flags]
   --name    Pre-fill the handle prompt
 ```
 
+### Update
+
+```
+citadel update
+```
+
+Updates citadel to the latest version via Homebrew. Requires Homebrew to be installed.
+
 ### In-chat slash commands
 
 | Command | Where | Effect |
@@ -97,6 +105,12 @@ mise run clean           # remove build artifacts
 ```sh
 brew tap vipul0092/citadel https://github.com/vipul0092/citadel
 brew install citadel
+```
+
+To update to the latest version:
+
+```sh
+citadel update
 ```
 
 ## Releasing
