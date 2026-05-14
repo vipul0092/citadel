@@ -1,5 +1,11 @@
 # citadel
 
+## 0.0.7 (2026-05-14)
+
+### Updates
+
+- Improve update command to be less verbose
+
 ## 0.0.6 (2026-05-14)
 
 ### Updates
