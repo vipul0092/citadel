@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,27 +15,29 @@ func runUpdate() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Updating Homebrew tap...")
+	fmt.Println("Checking for updates...")
+	var updateOut bytes.Buffer
 	update := exec.Command(brewPath, "update")
-	update.Stdout = os.Stdout
-	update.Stderr = os.Stderr
+	update.Stdout = &updateOut
+	update.Stderr = &updateOut
 	if err := update.Run(); err != nil {
+		fmt.Fprint(os.Stderr, updateOut.String())
 		fmt.Fprintf(os.Stderr, "error: brew update failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Upgrading citadel...")
+	var upgradeOut bytes.Buffer
 	upgrade := exec.Command(brewPath, "upgrade", "citadel")
-	var upgradeBuf strings.Builder
-	upgrade.Stdout = io.MultiWriter(os.Stdout, &upgradeBuf)
-	upgrade.Stderr = io.MultiWriter(os.Stderr, &upgradeBuf)
+	upgrade.Stdout = &upgradeOut
+	upgrade.Stderr = &upgradeOut
 	if err := upgrade.Run(); err != nil {
+		fmt.Fprint(os.Stderr, upgradeOut.String())
 		fmt.Fprintf(os.Stderr, "error: brew upgrade failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	ver := installedVersion(brewPath)
-	if strings.Contains(upgradeBuf.String(), "already installed") {
+	if strings.Contains(upgradeOut.String(), "already installed") {
 		fmt.Printf("Already up to date! Current version: %s\n", ver)
 	} else {
 		fmt.Printf("Done! Updated to version: %s\n", ver)
