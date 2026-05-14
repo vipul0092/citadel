@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +22,7 @@ func runServer(args []string) {
 	motd := fs.String("motd", "", "message of the day")
 	maxClients := fs.Int("max-clients", 16, "max simultaneous clients")
 	logFile := fs.String("log-file", "", "activity log path (default ~/.citadel/<name>/activity.log)")
+	headless := fs.Bool("headless", false, "run without TUI (control plane and TCP remain active)")
 	_ = fs.Parse(args)
 
 	if *name == "" {
@@ -42,6 +42,7 @@ func runServer(args []string) {
 		Motd:       *motd,
 		MaxClients: *maxClients,
 		LogFile:    resolvedLog,
+		Version:    versionString(),
 	}
 
 	srv, err := server.New(cfg)
@@ -50,14 +51,31 @@ func runServer(args []string) {
 		os.Exit(1)
 	}
 
-	// Compute listen address before starting (avoids race with srv.ListenAddr())
-	listenAddr := net.JoinHostPort(server.LocalIPv4(), fmt.Sprintf("%d", *port))
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Run(ctx) }()
+
+	listenAddr, err := srv.WaitListenAddr(ctx)
+	if err != nil {
+		select {
+		case runErr := <-errCh:
+			fmt.Fprintf(os.Stderr, "error: %v\n", runErr)
+		default:
+			fmt.Fprintf(os.Stderr, "server not ready: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	if *headless {
+		slog.Info("server running headless", "name", *name, "addr", listenAddr)
+		if err := <-errCh; err != nil {
+			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Silence slog while the TUI owns the terminal — the TUI shows all events.
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))

@@ -22,6 +22,12 @@ func main() {
 		runServer(os.Args[2:])
 	case "connect":
 		runClient(os.Args[2:])
+	case "host":
+		runHost(os.Args[2:])
+	case "dashboard":
+		runDashboard(os.Args[2:])
+	case "test":
+		runTest(os.Args[2:])
 	case "update":
 		runUpdate()
 	case "version", "--version", "-v":
@@ -38,6 +44,9 @@ func printUsage() {
 Subcommands:
   server   Start a Citadel server
   connect  Connect to a Citadel server
+  host      Spawn a matched server+client pair (captain mode)
+  dashboard Show all running citadel processes, launch/kill/restart
+  test      Drive a running session from the terminal (dev tool)
   update   Update citadel to the latest version (requires Homebrew)
   version  Print version
 
@@ -48,9 +57,18 @@ Server flags:
   --max-clients  Max simultaneous clients (default 16)
   --log-file     Activity log path (default ~/.citadel/<name>/activity.log)
                  Set to "" to disable
+  --headless     Run without TUI; logs to stderr (control plane stays active)
 
 Connect flags:
-  --server  Skip mDNS discovery; connect directly to host:port
-  --name    Pre-fill the name prompt
+  --server    Skip mDNS discovery; connect directly to host:port
+  --name      Pre-fill the name prompt
+  --headless  Connect without TUI; --server and --name required;
+              writes ~/.citadel/client/current.json
+
+Host flags:
+  --name      Lobby/server name (required)
+  --my-name   Captain's client name (required)
+  --port      TCP listen port (default 7777)
+  --motd      Message of the day (optional)
 `)
 }

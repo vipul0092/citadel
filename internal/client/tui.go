@@ -36,6 +36,11 @@ var (
 	clientNameCmds = []string{"/msg"}
 )
 
+// DrillInExitMsg is sent by the client TUI when /quit is used while embedded in
+// the dashboard drill-in. The dashboard intercepts it to exit drill-in mode
+// instead of quitting the whole program.
+type DrillInExitMsg struct{}
+
 // --- view states ---
 
 type viewState int
@@ -102,19 +107,36 @@ type TUI struct {
 	pendingServer discovery.ServerInfo
 
 	// chat
-	conn      *Conn
-	chatVP    viewport.Model
-	chatInput textinput.Model
-	messages  []string
-	peers     []string
-	suggIdx   int
-	version   string
+	conn       *Conn          // used for pre-handshake lifecycle only
+	ctrl       ConnController // used for all post-handshake operations
+	serverName string         // set from ctrl.ServerName() at handshake
+	chatVP     viewport.Model
+	chatInput  textinput.Model
+	messages   []string
+	peers      []string
+	suggIdx    int
+	version    string
 
 	width    int
 	height   int
 	ready    bool
 	quitting bool
 	lastErr  string
+	drillIn  bool // true when embedded in the dashboard; /quit exits drill-in, not the whole program
+	readOnly bool // true when spectating from the dashboard; input is disabled
+}
+
+// SetDrillIn marks this TUI as embedded in the dashboard. When set, /quit sends
+// DrillInExitMsg instead of tea.Quit.
+func (m *TUI) SetDrillIn(v bool) { m.drillIn = v }
+
+// SetReadOnly puts the TUI in spectator mode: chat input is disabled and the
+// input box is replaced with a read-only indicator.
+func (m *TUI) SetReadOnly(v bool) {
+	m.readOnly = v
+	if v {
+		m.chatInput.Blur()
+	}
 }
 
 // NewTUI creates the client TUI.
@@ -143,6 +165,10 @@ func NewTUI(manualAddr, preFillName string, scanCh <-chan discovery.ServerInfo, 
 }
 
 func (m *TUI) Init() tea.Cmd {
+	// Drill-in entry: skip discovery entirely, start receiving immediately.
+	if m.state == viewChat && m.ctrl != nil {
+		return tea.Batch(textinput.Blink, waitForNet(m.ctrl))
+	}
 	cmds := []tea.Cmd{textinput.Blink}
 	if m.manualAddr != "" {
 		m.state = viewNaming
@@ -248,7 +274,7 @@ func (m *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == viewNaming {
 				// normal path: user already typed a name
 				name := strings.TrimSpace(m.nameInput.Value())
-				cmds = append(cmds, doHandshake(m.conn, name))
+				cmds = append(cmds, doHandshake(m.conn, name, m.version))
 			} else {
 				// fallback path: dial succeeded, ask for name
 				m.state = viewNaming
@@ -262,27 +288,30 @@ func (m *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nameErr = msg.err.Error()
 			m.conn = nil
 		} else {
+			m.ctrl = NewInProcessController(m.conn)
+			m.serverName = m.ctrl.ServerName()
 			m.state = viewChat
-			m.peers = m.conn.Peers
-			motd := m.conn.Motd
+			m.peers = m.ctrl.Peers()
+			motd := m.ctrl.Motd()
 			if motd != "" {
 				m.addMessage(systemStyle.Render("📋 " + motd))
 			}
 			m.chatInput.Focus()
-			cmds = append(cmds, waitForNet(m.conn))
+			cmds = append(cmds, waitForNet(m.ctrl))
 		}
 
 	case netEnvMsg:
 		env := proto.Envelope(msg)
 		m.handleNetMsg(&env)
-		if m.conn != nil {
-			cmds = append(cmds, waitForNet(m.conn))
+		if m.ctrl != nil {
+			cmds = append(cmds, waitForNet(m.ctrl))
 		}
 
 	case netErrMsg:
 		m.state = viewDisconnected
 		m.lastErr = msg.err.Error()
 		m.conn = nil
+		m.ctrl = nil
 
 	case tea.KeyMsg:
 		cmds = append(cmds, m.handleKey(msg)...)
@@ -354,7 +383,7 @@ func (m *TUI) handleKey(msg tea.KeyMsg) []tea.Cmd {
 			m.nameErr = ""
 			if m.conn != nil {
 				// already have a connection (localhost probe) — handshake directly
-				cmds = append(cmds, doHandshake(m.conn, name))
+				cmds = append(cmds, doHandshake(m.conn, name, m.version))
 			} else {
 				cmds = append(cmds, doDial(m.pendingServer.Addr))
 			}
@@ -363,46 +392,54 @@ func (m *TUI) handleKey(msg tea.KeyMsg) []tea.Cmd {
 	case viewChat:
 		switch msg.Type {
 		case tea.KeyCtrlC:
-			if m.conn != nil {
-				m.conn.Close()
+			if m.ctrl != nil {
+				m.ctrl.Close()
 			}
 			m.quitting = true
 			cmds = append(cmds, tea.Quit)
 		case tea.KeyEnter:
-			m.suggIdx = 0
-			line := strings.TrimSpace(m.chatInput.Value())
-			m.chatInput.SetValue("")
-			if line != "" {
-				cmds = append(cmds, m.handleChatInput(line)...)
+			if !m.readOnly {
+				m.suggIdx = 0
+				line := strings.TrimSpace(m.chatInput.Value())
+				m.chatInput.SetValue("")
+				if line != "" {
+					cmds = append(cmds, m.handleChatInput(line)...)
+				}
 			}
 		case tea.KeyTab:
-			val := m.chatInput.Value()
-			suggestions := completer.Compute(val, clientCommands, clientNameCmds, m.peers)
-			if len(suggestions) > 0 {
-				m.chatInput.SetValue(completer.Complete(val, suggestions, m.suggIdx))
-				m.chatInput.CursorEnd()
-				m.suggIdx = 0
-			}
-		case tea.KeyUp:
-			suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
-			if len(suggestions) > 0 {
-				m.suggIdx--
-				if m.suggIdx < 0 {
-					m.suggIdx = len(suggestions) - 1
-				}
-			} else {
-				m.chatVP.ScrollUp(1)
-			}
-		case tea.KeyDown:
-			suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
-			if len(suggestions) > 0 {
-				m.suggIdx++
-				if m.suggIdx >= len(suggestions) {
+			if !m.readOnly {
+				val := m.chatInput.Value()
+				suggestions := completer.Compute(val, clientCommands, clientNameCmds, m.peers)
+				if len(suggestions) > 0 {
+					m.chatInput.SetValue(completer.Complete(val, suggestions, m.suggIdx))
+					m.chatInput.CursorEnd()
 					m.suggIdx = 0
 				}
-			} else {
-				m.chatVP.ScrollDown(1)
 			}
+		case tea.KeyUp:
+			if !m.readOnly {
+				suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
+				if len(suggestions) > 0 {
+					m.suggIdx--
+					if m.suggIdx < 0 {
+						m.suggIdx = len(suggestions) - 1
+					}
+					break
+				}
+			}
+			m.chatVP.ScrollUp(1)
+		case tea.KeyDown:
+			if !m.readOnly {
+				suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
+				if len(suggestions) > 0 {
+					m.suggIdx++
+					if m.suggIdx >= len(suggestions) {
+						m.suggIdx = 0
+					}
+					break
+				}
+			}
+			m.chatVP.ScrollDown(1)
 		case tea.KeyPgUp:
 			m.chatVP.ScrollUp(5)
 		case tea.KeyPgDown:
@@ -423,8 +460,14 @@ func (m *TUI) handleChatInput(line string) []tea.Cmd {
 	cmd := Parse(line)
 	switch cmd.Kind {
 	case CmdQuit:
-		if m.conn != nil {
-			m.conn.Close()
+		if m.drillIn {
+			if m.ctrl != nil {
+				m.ctrl.Close()
+			}
+			return []tea.Cmd{func() tea.Msg { return DrillInExitMsg{} }}
+		}
+		if m.ctrl != nil {
+			m.ctrl.Close()
 		}
 		m.quitting = true
 		return []tea.Cmd{tea.Quit}
@@ -440,8 +483,8 @@ func (m *TUI) handleChatInput(line string) []tea.Cmd {
 		}
 
 	case CmdMsg:
-		if m.conn != nil {
-			_ = m.conn.Send(proto.TypeChat, cmd.Target, proto.ChatPayload{Text: cmd.Text, To: cmd.Target})
+		if m.ctrl != nil {
+			_ = m.ctrl.Send(proto.TypeChat, cmd.Target, proto.ChatPayload{Text: cmd.Text, To: cmd.Target})
 			ts := time.Now().Format("15:04:05")
 			m.addMessage(directStyle.Render(fmt.Sprintf("[%s] → %s (private): %s", ts, cmd.Target, cmd.Text)))
 		}
@@ -449,8 +492,8 @@ func (m *TUI) handleChatInput(line string) []tea.Cmd {
 	default:
 		if cmd.Text != "" && !strings.HasPrefix(cmd.Text, "unknown command") {
 			// plain chat
-			if m.conn != nil {
-				_ = m.conn.Send(proto.TypeChat, "", proto.ChatPayload{Text: cmd.Text})
+			if m.ctrl != nil {
+				_ = m.ctrl.Send(proto.TypeChat, "", proto.ChatPayload{Text: cmd.Text})
 			}
 		} else if strings.HasPrefix(cmd.Text, "unknown command") || strings.HasPrefix(cmd.Text, "usage") {
 			m.addMessage(errorMsgStyle.Render(cmd.Text))
@@ -468,11 +511,7 @@ func (m *TUI) handleNetMsg(env *proto.Envelope) {
 			return
 		}
 		if env.From == "server" {
-			serverName := ""
-			if m.conn != nil {
-				serverName = m.conn.ServerName
-			}
-			m.addMessage(fmt.Sprintf("[%s] ", ts) + serverSayStyle.Render("⚔ "+serverName+":") + " " + normalStyle.Render(p.Text))
+			m.addMessage(fmt.Sprintf("[%s] ", ts) + serverSayStyle.Render("⚔ "+m.serverName+":") + " " + normalStyle.Render(p.Text))
 		} else if env.To != "" {
 			// direct message — color the sender name
 			sender := citadelstyle.NameStyle(env.From).Render(env.From)
@@ -514,6 +553,7 @@ func (m *TUI) handleNetMsg(env *proto.Envelope) {
 		m.state = viewDisconnected
 		m.lastErr = "you were kicked: " + p.Reason
 		m.conn = nil
+		m.ctrl = nil
 
 	case proto.TypePong:
 		// heartbeat; no display needed
@@ -596,11 +636,10 @@ func (m *TUI) viewNaming() string {
 
 func (m *TUI) viewChat() string {
 	myName := ""
-	serverName := ""
-	if m.conn != nil {
-		myName = m.conn.Name()
-		serverName = m.conn.ServerName
+	if m.ctrl != nil {
+		myName = m.ctrl.Name()
 	}
+	serverName := m.serverName
 
 	// Header: server name + client's own name in their assigned color + version
 	myNameStyled := citadelstyle.NameStyle(myName).Render(myName)
@@ -611,16 +650,21 @@ func (m *TUI) viewChat() string {
 		myNameStyled +
 		statusStyle.Render(fmt.Sprintf("  │  %d peers  │  %s", len(m.peers), m.version))
 
-	suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
-
-	// Input box: always 2 content lines (suggestion bar + input), fixed height.
-	suggBar := completer.Bar(suggestions, m.suggIdx, m.width-6)
-	inputLine := citadelstyle.NameStyle(myName).Render(myName) + statusStyle.Render(" > ") + m.chatInput.View()
-	inputLines := []string{suggBar, inputLine}
-	inputBox := inputBorder.Width(m.width - 4).Render(strings.Join(inputLines, "\n"))
-
 	// inputBoxH is always fixed: 2 content lines + top/bottom border
 	const inputBoxH = 4
+
+	// Input box: either a live input (normal) or a read-only spectator indicator (dashboard drill-in).
+	var inputBox string
+	if m.readOnly {
+		inputBox = inputBorder.Width(m.width - 4).Render(
+			"\n" + statusStyle.Render("  spectator mode  ·  read-only  ·  Esc to exit"))
+	} else {
+		suggestions := completer.Compute(m.chatInput.Value(), clientCommands, clientNameCmds, m.peers)
+		suggBar := completer.Bar(suggestions, m.suggIdx, m.width-6)
+		inputLine := citadelstyle.NameStyle(myName).Render(myName) + statusStyle.Render(" > ") + m.chatInput.View()
+		inputLines := []string{suggBar, inputLine}
+		inputBox = inputBorder.Width(m.width - 4).Render(strings.Join(inputLines, "\n"))
+	}
 
 	// Fixed heights: header=1, game placeholder=1, separators=2
 	const gamePaneH = 1
@@ -698,20 +742,36 @@ func doDial(addr string) tea.Cmd {
 	}
 }
 
-func doHandshake(conn *Conn, name string) tea.Cmd {
+func doHandshake(conn *Conn, name, version string) tea.Cmd {
 	return func() tea.Msg {
-		err := conn.Handshake(name)
+		err := conn.Handshake(name, version)
 		return handshakeResultMsg{err: err}
 	}
 }
 
-func waitForNet(conn *Conn) tea.Cmd {
+func waitForNet(ctrl ConnController) tea.Cmd {
 	return func() tea.Msg {
-		env, err := conn.Recv()
+		env, err := ctrl.Recv()
 		if err != nil {
 			return netErrMsg{err: err}
 		}
 		return netEnvMsg(*env)
+	}
+}
+
+// NewTUIFromController creates the client chat TUI backed by a ConnController.
+// Used by the dashboard for remote drill-in (starts directly in viewChat).
+func NewTUIFromController(ctrl ConnController, displayServerName, myName, version string) *TUI {
+	ci := textinput.New()
+	ci.Placeholder = "message or /help"
+	ci.Focus()
+	return &TUI{
+		state:      viewChat,
+		ctrl:       ctrl,
+		serverName: displayServerName,
+		peers:      ctrl.Peers(),
+		version:    version,
+		chatInput:  ci,
 	}
 }
 

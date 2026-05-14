@@ -76,3 +76,7 @@ Server commands: `/kick <name>`, `/say <text>`, `/motd <text>`, `/quit`.
 ## Split-pane design (Phase 6 game pane)
 
 The client TUI is built with a split-pane layout from day one. The bottom game pane is hidden (zero height) until Phase 6 wires `Type:"game"` end-to-end. Revealing it requires only updating the layout proportions — no structural rewrite.
+
+## Planned: Dashboard view
+
+Once the headless mode and dashboard work lands, the existing server-admin and client-chat views remain unchanged but become **drillable from a dashboard** that lists every running citadel on the machine. See [dashboard.md](dashboard.md) for the full spec. The existing TUIs are refactored behind `HubEventSource` / `ConnController` interfaces so they can be backed by either an in-process pointer (today) or a remote control-plane attacher (drill-in).

@@ -3,9 +3,11 @@ package client
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
+	"github.com/vipul0092/citadel/internal/control"
 	"github.com/vipul0092/citadel/internal/proto"
 )
 
@@ -28,6 +30,10 @@ type Conn struct {
 	recvErr chan error
 	sendCh  chan []byte
 	closeCh chan struct{}
+
+	// control plane — nil until Handshake succeeds
+	ctrl   *control.Plane
+	ctrlCh chan *proto.Envelope // tap on the inbound envelope stream
 }
 
 // Dial opens a TCP connection to addr but does not send hello yet.
@@ -52,12 +58,13 @@ func dial(addr string, timeout time.Duration) (*Conn, error) {
 		recvErr: make(chan error, 1),
 		sendCh:  make(chan []byte, 64),
 		closeCh: make(chan struct{}),
+		ctrlCh:  make(chan *proto.Envelope, 32),
 	}, nil
 }
 
 // Handshake sends hello{name} and waits for welcome or reject.
-// On success it starts background read/write/ping goroutines.
-func (c *Conn) Handshake(name string) error {
+// On success it starts background read/write/ping goroutines and the control plane.
+func (c *Conn) Handshake(name, version string) error {
 	if err := proto.Encode(c.conn, proto.TypeHello, "", "", proto.HelloPayload{
 		Name:    name,
 		Version: proto.ProtoVersion,
@@ -83,6 +90,7 @@ func (c *Conn) Handshake(name string) error {
 		go c.readLoop()
 		go c.writeLoop()
 		go c.pingLoop()
+		c.startControlPlane(version)
 		return nil
 
 	case proto.TypeReject:
@@ -94,6 +102,31 @@ func (c *Conn) Handshake(name string) error {
 		return fmt.Errorf("unexpected message type %q during handshake", env.Type)
 	}
 }
+
+// startControlPlane opens the UDS listener and sentinel, then starts the bridge goroutine.
+func (c *Conn) startControlPlane(version string) {
+	ctrl, err := control.New("client", c.myName, c.addr, version, c.ServerName, NewActionsProvider(c))
+	if err != nil {
+		slog.Warn("control plane start failed", "err", err)
+		return
+	}
+	c.ctrl = ctrl
+	go c.bridgeLoop()
+}
+
+// bridgeLoop forwards received envelopes to the control-plane hub until the connection closes.
+func (c *Conn) bridgeLoop() {
+	for {
+		select {
+		case env := <-c.ctrlCh:
+			c.ctrl.Hub().ForwardEnvelope(env)
+		case <-c.closeCh:
+			c.ctrl.Close()
+			return
+		}
+	}
+}
+
 
 // Recv blocks until the next inbound envelope or connection error.
 func (c *Conn) Recv() (*proto.Envelope, error) {
@@ -122,6 +155,17 @@ func (c *Conn) Send(msgType, to string, payload any) error {
 // Name returns the client's registered name.
 func (c *Conn) Name() string { return c.myName }
 
+// Addr returns the server address this Conn is connected to.
+func (c *Conn) Addr() string { return c.addr }
+
+// ControlSockPath returns the UDS socket path for the control plane, or "" if not started.
+func (c *Conn) ControlSockPath() string {
+	if c.ctrl == nil {
+		return ""
+	}
+	return c.ctrl.SockPath()
+}
+
 // Close sends a leave message and closes the connection.
 func (c *Conn) Close() {
 	_ = c.Send(proto.TypeLeave, "", proto.LeavePayload{})
@@ -147,6 +191,11 @@ func (c *Conn) readLoop() {
 		case c.recvCh <- env:
 		case <-c.closeCh:
 			return
+		}
+		// Non-blocking tap to the control-plane bridge (never blocks the TUI).
+		select {
+		case c.ctrlCh <- env:
+		default:
 		}
 	}
 }

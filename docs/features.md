@@ -25,6 +25,20 @@ Items here are decided/wanted but not yet implemented. When a feature lands, mov
 - Replay log: append every `Type:"game"` envelope verbatim to a separate file
 - RTT indicator in client status bar (Phase 6 demo via `kind:"ping"` round-trips)
 
+## Headless mode and dashboard (implemented — P1–P8)
+
+The control plane, `--headless` flag, `citadel host`, `citadel test`, and `citadel dashboard` are all implemented. See:
+- [docs/control.md](control.md) — control plane protocol + ops reference
+- [docs/dashboard.md](dashboard.md) — dashboard view states and keybindings
+- [ADR 0005](decisions/0005-control-plane-unix-socket.md), [ADR 0006](decisions/0006-session-pointer-files.md), [ADR 0007](decisions/0007-always-on-control-plane.md)
+
+Remaining follow-on items:
+- Mid-game captain authority transfer (`kind:"transfer-captain"` game-layer message)
+- Multi-server-on-one-box first-class UX (`--port 0` supported; dashboard could show richer per-session UI)
+- Per-session pointer files (`<session_id>.json` + `current.json` as a symlink)
+- Lobby metadata in mDNS TXT records (max players, password, game mode)
+- TS reference client library (Node + browser) for the control protocol
+
 ## UX / TUI
 
 - Mode toggle hotkey: switch input focus between chat and game pane

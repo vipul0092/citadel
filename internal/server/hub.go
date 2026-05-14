@@ -19,6 +19,7 @@ const (
 	EvDirect
 	EvSay
 	EvMotd
+	EvPeers // silently updates peer list (e.g. initial state from remote source)
 )
 
 // HubEvent carries a state change notification to the server TUI.
@@ -76,8 +77,10 @@ type Hub struct {
 	kickCh   chan kickReq
 	sayCh    chan string
 	motdCh   chan string
+	peersCh  chan chan []PeerEntry // safe cross-goroutine peer snapshot request
 
-	Events chan HubEvent // consumed by server TUI; non-blocking send
+	Events        chan HubEvent // consumed by server TUI; non-blocking send
+	ControlEvents chan HubEvent // consumed by control-plane bridge; non-blocking send
 
 	// state owned exclusively by Run goroutine
 	clients    map[string]*clientConn
@@ -89,19 +92,28 @@ type Hub struct {
 // NewHub creates a Hub ready to be started with Run.
 func NewHub(maxClients int, motd string, log *ActivityLog) *Hub {
 	return &Hub{
-		regCh:      make(chan registerReq, 8),
-		unregCh:    make(chan *clientConn, 32),
-		bcastCh:    make(chan broadcastMsg, 128),
-		directCh:   make(chan directMsg, 128),
-		kickCh:     make(chan kickReq, 8),
-		sayCh:      make(chan string, 8),
-		motdCh:     make(chan string, 8),
-		Events:     make(chan HubEvent, 64),
-		clients:    make(map[string]*clientConn),
-		motd:       motd,
-		maxClients: maxClients,
-		log:        log,
+		regCh:         make(chan registerReq, 8),
+		unregCh:       make(chan *clientConn, 32),
+		bcastCh:       make(chan broadcastMsg, 128),
+		directCh:      make(chan directMsg, 128),
+		kickCh:        make(chan kickReq, 8),
+		sayCh:         make(chan string, 8),
+		motdCh:        make(chan string, 8),
+		peersCh:       make(chan chan []PeerEntry, 8),
+		Events:        make(chan HubEvent, 64),
+		ControlEvents: make(chan HubEvent, 64),
+		clients:       make(map[string]*clientConn),
+		motd:          motd,
+		maxClients:    maxClients,
+		log:           log,
 	}
+}
+
+// Peers returns a snapshot of currently connected peers. Safe to call from any goroutine.
+func (h *Hub) Peers() []PeerEntry {
+	result := make(chan []PeerEntry, 1)
+	h.peersCh <- result
+	return <-result
 }
 
 // Run processes all hub commands. Call in a dedicated goroutine; runs until the process exits.
@@ -136,6 +148,9 @@ func (h *Hub) Run() {
 			}
 			h.log.Say(text)
 			h.emit(HubEvent{Kind: EvSay, Text: text})
+
+		case result := <-h.peersCh:
+			result <- h.peerSnapshot()
 
 		case motd := <-h.motdCh:
 			h.motd = motd
@@ -304,5 +319,9 @@ func (h *Hub) emit(ev HubEvent) {
 	select {
 	case h.Events <- ev:
 	default: // TUI is behind; drop rather than block the hub
+	}
+	select {
+	case h.ControlEvents <- ev:
+	default: // control-plane bridge is behind; drop
 	}
 }
