@@ -21,9 +21,9 @@ const (
 type Conn struct {
 	addr       string
 	myName     string
-	ServerName string
-	Motd       string
-	Peers      []string
+	serverName string
+	motd       string
+	peers      []string
 
 	conn    net.Conn
 	recvCh  chan *proto.Envelope
@@ -84,9 +84,9 @@ func (c *Conn) Handshake(name, version string) error {
 			return fmt.Errorf("parsing welcome: %w", err)
 		}
 		c.myName = name
-		c.ServerName = w.ServerName
-		c.Motd = w.Motd
-		c.Peers = w.Peers
+		c.serverName = w.ServerName
+		c.motd = w.Motd
+		c.peers = w.Peers
 		go c.readLoop()
 		go c.writeLoop()
 		go c.pingLoop()
@@ -105,7 +105,8 @@ func (c *Conn) Handshake(name, version string) error {
 
 // startControlPlane opens the UDS listener and sentinel, then starts the bridge goroutine.
 func (c *Conn) startControlPlane(version string) {
-	ctrl, err := control.New("client", c.myName, c.addr, version, c.ServerName, NewActionsProvider(c))
+	ca := NewActionsProvider(c)
+	ctrl, err := control.New("client", c.myName, c.addr, version, c.serverName, control.RoleActions{Common: ca, Client: ca})
 	if err != nil {
 		slog.Warn("control plane start failed", "err", err)
 		return
@@ -154,6 +155,15 @@ func (c *Conn) Send(msgType, to string, payload any) error {
 
 // Name returns the client's registered name.
 func (c *Conn) Name() string { return c.myName }
+
+// ServerName returns the name of the server this Conn is connected to.
+func (c *Conn) ServerName() string { return c.serverName }
+
+// Motd returns the message-of-the-day received at handshake.
+func (c *Conn) Motd() string { return c.motd }
+
+// Peers returns the initial peer list received at handshake.
+func (c *Conn) Peers() []string { return c.peers }
 
 // Addr returns the server address this Conn is connected to.
 func (c *Conn) Addr() string { return c.addr }

@@ -1,13 +1,6 @@
 package control
 
-import (
-	"encoding/json"
-	"errors"
-)
-
-// ErrNotSupported is returned by ActionsProvider implementations for ops that do not
-// apply to their role (e.g. kick on a client socket).
-var ErrNotSupported = errors.New("op not supported for this role")
+import "encoding/json"
 
 // PeerInfo describes a connected peer for list-peers responses.
 type PeerInfo struct {
@@ -16,20 +9,29 @@ type PeerInfo struct {
 	Connected string `json:"connected,omitempty"`
 }
 
-// ActionsProvider is implemented by server and client code to expose ops that the
-// control-plane listener can trigger on behalf of an attacher.
-//
-// Methods that do not apply to the current role must return ErrNotSupported.
-type ActionsProvider interface {
-	// ListPeers returns the currently-connected peers (both roles).
+// CommonActions is implemented by both server and client roles.
+type CommonActions interface {
 	ListPeers() []PeerInfo
+}
 
-	// Server-only ops.
+// ServerActions is implemented by the server role only.
+type ServerActions interface {
 	KickPeer(name, reason string) (bool, error)
 	SayAll(text string) error
 	SetMotd(text string) error
+}
 
-	// Client-only ops.
+// ClientActions is implemented by the client role only.
+type ClientActions interface {
 	SendChat(text, to string) error
 	SendGame(kind, to string, data json.RawMessage) error
+}
+
+// RoleActions bundles the action interfaces for one citadel process.
+// Common is always non-nil. Exactly one of Server or Client is non-nil,
+// determined by the role of the process.
+type RoleActions struct {
+	Common CommonActions
+	Server ServerActions // non-nil for server role; nil for client role
+	Client ClientActions // non-nil for client role; nil for server role
 }

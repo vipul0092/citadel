@@ -4,14 +4,77 @@
 
 See [control.md](control.md) for the full op/event schema reference.
 
+## End-to-end verification script
+
+`scripts/verify.sh` is a self-contained smoke test that spins up a real server and client, runs five control-plane scenarios, and asserts the expected events are received. It cleans up all background processes on exit.
+
+### Prerequisites
+
+```sh
+mise run build      # produces ./citadel
+```
+
+### Run
+
+```sh
+./scripts/verify.sh
+# or via mise:
+mise run verify
+```
+
+### What it checks
+
+| # | Scenario | How |
+|---|----------|-----|
+| 1 | **peer-join** | Client connects headless; server watcher receives `ev:"peer-join"` with the client name |
+| 2 | **list-peers** | `citadel test drive` sends `list-peers`; response contains `ev:"peers"` snapshot |
+| 3 | **client chat** | `citadel test send-chat` from client; server watcher receives `ev:"chat"` with message text |
+| 4 | **server say** | `citadel test send-chat --role server`; server watcher receives `ev:"say"` |
+| 5 | **kick** | `citadel test kick`; server watcher receives `ev:"kick"` with peer name |
+
+### Example output
+
+```
+▶  binary OK: citadel version v0.1.0
+▶  starting server…
+✓  server ready  addr=192.168.1.5:51234
+▶  starting client…
+✓  client ready
+▶  scenario 1: peer-join
+✓  peer-join received on server
+▶  scenario 2: list-peers
+✓  list-peers returned peers snapshot
+▶  scenario 3: client chat
+✓  chat event received on server
+▶  scenario 4: server say
+✓  say event received on server
+▶  scenario 5: kick
+✓  kick event received on server
+
+✓  ALL CHECKS PASSED
+```
+
+### Failure output
+
+Any assertion that does not complete within its timeout (default 8 s) prints a
+failure line and exits non-zero:
+
+```
+✗  timed out waiting for '"ev":"chat"' in server.jsonl
+```
+
+The script uses a random OS-assigned port (`--port 0`) and unique process names
+(`VerifyServer`, `VerifyClient`) so it is safe to run alongside a real citadel
+session.
+
 ## Socket resolution
 
 Every subcommand accepts `--sock <path>` to target a specific socket. Without it, the tool auto-resolves:
 
-| `--role` | Resolution order |
-|----------|-----------------|
+| `--role`           | Resolution order                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `client` (default) | `~/.citadel/client/current.json` → `~/.citadel/host/current.json` → scan `~/.citadel/run/*.json` for any client |
-| `server` | `~/.citadel/host/current.json` server socket → scan `~/.citadel/run/*.json` for any server |
+| `server`           | `~/.citadel/host/current.json` server socket → scan `~/.citadel/run/*.json` for any server                      |
 
 If resolution fails, the command exits with an error suggesting `--sock`.
 
@@ -30,11 +93,11 @@ citadel test watch --sock /path/to.sock
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--sock` | (auto) | Control socket path |
-| `--role` | `client` | `client` or `server` for auto-resolution |
-| `--level` | `full` | `summary` or `full` subscription level |
+| Flag      | Default  | Description                              |
+| --------- | -------- | ---------------------------------------- |
+| `--sock`  | (auto)   | Control socket path                      |
+| `--role`  | `client` | `client` or `server` for auto-resolution |
+| `--level` | `full`   | `summary` or `full` subscription level   |
 
 ### send-chat
 
@@ -56,12 +119,12 @@ When `--role client` (default), `send-chat` is used and `--to` is optional.
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--sock` | (auto) | Control socket path |
-| `--role` | `client` | `client` or `server` |
-| `--text` | (required) | Message text |
-| `--to` | (broadcast) | Direct recipient; client role only |
+| Flag     | Default     | Description                        |
+| -------- | ----------- | ---------------------------------- |
+| `--sock` | (auto)      | Control socket path                |
+| `--role` | `client`    | `client` or `server`               |
+| `--text` | (required)  | Message text                       |
+| `--to`   | (broadcast) | Direct recipient; client role only |
 
 ### send-game
 
@@ -74,12 +137,12 @@ citadel test send-game --kind "move"  --data '{"x":3,"y":4}' --to alice
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--sock` | (auto) | Control socket path |
-| `--kind` | (required) | Game message kind string |
-| `--data` | `{}` | JSON payload |
-| `--to` | (broadcast) | Direct recipient |
+| Flag     | Default     | Description              |
+| -------- | ----------- | ------------------------ |
+| `--sock` | (auto)      | Control socket path      |
+| `--kind` | (required)  | Game message kind string |
+| `--data` | `{}`        | JSON payload             |
+| `--to`   | (broadcast) | Direct recipient         |
 
 ### kick
 
@@ -92,11 +155,11 @@ citadel test kick --name alice --reason "idle timeout"
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--sock` | (auto) | Control socket path (defaults to server socket) |
-| `--name` | (required) | Peer name to kick |
-| `--reason` | `kicked by citadel test` | Kick reason |
+| Flag       | Default                  | Description                                     |
+| ---------- | ------------------------ | ----------------------------------------------- |
+| `--sock`   | (auto)                   | Control socket path (defaults to server socket) |
+| `--name`   | (required)               | Peer name to kick                               |
+| `--reason` | `kicked by citadel test` | Kick reason                                     |
 
 ### drive
 
@@ -117,9 +180,9 @@ Use `drive` when you need to send an op with no dedicated subcommand (`set-motd`
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--sock` | (auto) | Control socket path |
+| Flag     | Default  | Description                              |
+| -------- | -------- | ---------------------------------------- |
+| `--sock` | (auto)   | Control socket path                      |
 | `--role` | `client` | `client` or `server` for auto-resolution |
 
 ## Op cheat-sheet

@@ -16,7 +16,7 @@ type gapInfo struct {
 // All methods that read or mutate state require the caller to hold mu.
 type ring struct {
 	mu      sync.Mutex
-	entries [ringCap]Event
+	entries [ringCap]ringEntry
 	head    int    // next write index (mod ringCap)
 	count   int    // number of valid entries (0..ringCap)
 	nextSeq uint64 // seq to assign on the next append (starts at 1)
@@ -26,10 +26,10 @@ func newRing() *ring {
 	return &ring{nextSeq: 1}
 }
 
-// append stores a new event in the ring and returns it with seq and At filled in.
+// append stores a new ringEntry in the ring and returns it with seq and At filled in.
 // Caller must hold r.mu.
-func (r *ring) append(kind string, data json.RawMessage) Event {
-	ev := Event{
+func (r *ring) append(kind string, data json.RawMessage) ringEntry {
+	ev := ringEntry{
 		Seq:  r.nextSeq,
 		At:   time.Now().UTC(),
 		Kind: kind,
@@ -54,10 +54,10 @@ func (r *ring) oldest() uint64 {
 	return r.entries[idx].Seq
 }
 
-// snapshot returns events with seq > since that match level, and a gap descriptor
+// snapshot returns ringEntrys with seq > since that match level, and a gap descriptor
 // when since is too old for the ring to cover.
 // Caller must hold r.mu.
-func (r *ring) snapshot(since uint64, level Level) (*gapInfo, []Event) {
+func (r *ring) snapshot(since uint64, level Level) (*gapInfo, []ringEntry) {
 	if r.count == 0 {
 		return nil, nil
 	}
@@ -71,13 +71,13 @@ func (r *ring) snapshot(since uint64, level Level) (*gapInfo, []Event) {
 		gap = &gapInfo{MissingFrom: since + 1, MissingTo: oldest - 1}
 	}
 
-	var events []Event
+	var ringEntrys []ringEntry
 	for i := 0; i < r.count; i++ {
 		idx := (r.head - r.count + i + ringCap) % ringCap
 		ev := r.entries[idx]
 		if ev.Seq > since && levelIncludes(level, ev.Kind) {
-			events = append(events, ev)
+			ringEntrys = append(ringEntrys, ev)
 		}
 	}
-	return gap, events
+	return gap, ringEntrys
 }

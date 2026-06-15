@@ -24,11 +24,11 @@ const (
 
 // HubEvent carries a state change notification to the server TUI.
 type HubEvent struct {
-	Kind    HubEventKind
-	Name    string
-	Target  string
-	Text    string
-	Peers   []PeerEntry
+	Kind   HubEventKind
+	Name   string
+	Target string
+	Text   string
+	Peers  []PeerEntry
 }
 
 // PeerEntry describes one connected client for display in the TUI.
@@ -68,6 +68,56 @@ type kickReq struct {
 	result chan bool
 }
 
+// HubEventEmitter is the output seam for Hub — all state-change notifications
+// flow through a single Emit call. The concrete fanOutEmitter fans out to TUI
+// and control-plane consumers; test spies can record calls without channels.
+type HubEventEmitter interface {
+	Emit(ev HubEvent)
+}
+
+// HubLogger abstracts the activity log so Hub does not depend on the concrete
+// file-backed ActivityLog type.
+type HubLogger interface {
+	Join(name string)
+	Leave(name string)
+	Kick(name, reason string)
+	Chat(name, text string)
+	Direct(from, to, text string)
+	Say(text string)
+	Motd(text string)
+}
+
+// fanOutEmitter fans hub events to two independent consumers: the server TUI
+// (via TUIEvents) and the control-plane bridge (via ControlEvents).
+type fanOutEmitter struct {
+	tuiCh     chan HubEvent
+	controlCh chan HubEvent
+}
+
+func newFanOutEmitter() *fanOutEmitter {
+	return &fanOutEmitter{
+		tuiCh:     make(chan HubEvent, 64),
+		controlCh: make(chan HubEvent, 64),
+	}
+}
+
+func (e *fanOutEmitter) Emit(ev HubEvent) {
+	select {
+	case e.tuiCh <- ev:
+	default:
+	}
+	select {
+	case e.controlCh <- ev:
+	default:
+	}
+}
+
+// TUIEvents returns the channel consumed by the server TUI.
+func (e *fanOutEmitter) TUIEvents() <-chan HubEvent { return e.tuiCh }
+
+// ControlEvents returns the channel consumed by the control-plane bridge.
+func (e *fanOutEmitter) ControlEvents() <-chan HubEvent { return e.controlCh }
+
 // Hub is the central message router. All map mutations happen in its Run goroutine.
 type Hub struct {
 	regCh    chan registerReq
@@ -79,33 +129,31 @@ type Hub struct {
 	motdCh   chan string
 	peersCh  chan chan []PeerEntry // safe cross-goroutine peer snapshot request
 
-	Events        chan HubEvent // consumed by server TUI; non-blocking send
-	ControlEvents chan HubEvent // consumed by control-plane bridge; non-blocking send
+	emitter HubEventEmitter
 
 	// state owned exclusively by Run goroutine
 	clients    map[string]*clientConn
 	motd       string
 	maxClients int
-	log        *ActivityLog
+	log        HubLogger
 }
 
 // NewHub creates a Hub ready to be started with Run.
-func NewHub(maxClients int, motd string, log *ActivityLog) *Hub {
+func NewHub(maxClients int, motd string, log HubLogger, emitter HubEventEmitter) *Hub {
 	return &Hub{
-		regCh:         make(chan registerReq, 8),
-		unregCh:       make(chan *clientConn, 32),
-		bcastCh:       make(chan broadcastMsg, 128),
-		directCh:      make(chan directMsg, 128),
-		kickCh:        make(chan kickReq, 8),
-		sayCh:         make(chan string, 8),
-		motdCh:        make(chan string, 8),
-		peersCh:       make(chan chan []PeerEntry, 8),
-		Events:        make(chan HubEvent, 64),
-		ControlEvents: make(chan HubEvent, 64),
-		clients:       make(map[string]*clientConn),
-		motd:          motd,
-		maxClients:    maxClients,
-		log:           log,
+		regCh:      make(chan registerReq, 8),
+		unregCh:    make(chan *clientConn, 32),
+		bcastCh:    make(chan broadcastMsg, 128),
+		directCh:   make(chan directMsg, 128),
+		kickCh:     make(chan kickReq, 8),
+		sayCh:      make(chan string, 8),
+		motdCh:     make(chan string, 8),
+		peersCh:    make(chan chan []PeerEntry, 8),
+		emitter:    emitter,
+		clients:    make(map[string]*clientConn),
+		motd:       motd,
+		maxClients: maxClients,
+		log:        log,
 	}
 }
 
@@ -181,7 +229,6 @@ func (h *Hub) handleRegister(req registerReq) {
 	peers := h.peerNames(name)
 	req.result <- registerResult{OK: true, Peers: peers, Motd: h.motd}
 
-	// broadcast join event to all other clients
 	data := h.encode(proto.TypeSystem, "", "", proto.SystemPayload{
 		Event: proto.EvJoin,
 		Name:  name,
@@ -282,7 +329,6 @@ func (h *Hub) SetMotd(motd string) {
 	h.motdCh <- motd
 }
 
-// peerNames returns the names of all connected clients except exclude.
 func (h *Hub) peerNames(exclude string) []string {
 	names := make([]string, 0, len(h.clients))
 	for name := range h.clients {
@@ -293,7 +339,6 @@ func (h *Hub) peerNames(exclude string) []string {
 	return names
 }
 
-// peerSnapshot returns PeerEntry for all currently connected clients.
 func (h *Hub) peerSnapshot() []PeerEntry {
 	entries := make([]PeerEntry, 0, len(h.clients))
 	for _, c := range h.clients {
@@ -316,12 +361,5 @@ func (h *Hub) encode(msgType, from, to string, payload any) []byte {
 }
 
 func (h *Hub) emit(ev HubEvent) {
-	select {
-	case h.Events <- ev:
-	default: // TUI is behind; drop rather than block the hub
-	}
-	select {
-	case h.ControlEvents <- ev:
-	default: // control-plane bridge is behind; drop
-	}
+	h.emitter.Emit(ev)
 }

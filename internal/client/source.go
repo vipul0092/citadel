@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/vipul0092/citadel/internal/control"
 	ctrlclient "github.com/vipul0092/citadel/internal/control/client"
 	"github.com/vipul0092/citadel/internal/proto"
 )
@@ -23,25 +24,10 @@ type ConnController interface {
 	Close()
 }
 
-// --- in-process controller ---
-
-type inProcessController struct{ c *Conn }
-
-// NewInProcessController wraps a *Conn as a ConnController.
-func NewInProcessController(c *Conn) ConnController { return &inProcessController{c: c} }
-
-func (i *inProcessController) Recv() (*proto.Envelope, error)        { return i.c.Recv() }
-func (i *inProcessController) Send(t, to string, p any) error        { return i.c.Send(t, to, p) }
-func (i *inProcessController) Name() string                          { return i.c.Name() }
-func (i *inProcessController) ServerName() string                    { return i.c.ServerName }
-func (i *inProcessController) Motd() string                          { return i.c.Motd }
-func (i *inProcessController) Peers() []string                       { return i.c.Peers }
-func (i *inProcessController) Close()                                { i.c.Close() }
-
 // --- remote controller ---
 
 type remoteConnController struct {
-	conn       *ctrlclient.Conn
+	conn       *ctrlclient.Subscriber
 	recvCh     chan *proto.Envelope
 	myName     string
 	serverName string
@@ -52,15 +38,14 @@ type remoteConnController struct {
 // NewRemoteController dials the client's control socket and returns a ConnController
 // that the dashboard drill-in TUI can use to send/receive as if it were the real Conn.
 func NewRemoteController(sockPath, myName, displayServerName string) (ConnController, error) {
-	conn, err := ctrlclient.Dial(sockPath)
+	sub, err := ctrlclient.DialAndSubscribe(sockPath, "full", 0)
 	if err != nil {
 		return nil, err
 	}
-	_ = conn.Send(map[string]any{"op": "subscribe", "level": "full", "since": 0})
-	_ = conn.Send(map[string]any{"op": "list-peers"})
+	_ = sub.Send(map[string]any{"op": "list-peers"})
 
 	c := &remoteConnController{
-		conn:       conn,
+		conn:       sub,
 		recvCh:     make(chan *proto.Envelope, 64),
 		myName:     myName,
 		serverName: displayServerName,
@@ -102,76 +87,55 @@ func (c *remoteConnController) Send(msgType, to string, payload any) error {
 
 func (c *remoteConnController) translate() {
 	defer close(c.recvCh)
-	for frame := range c.conn.Events() {
-		var m map[string]any
-		if err := json.Unmarshal(frame, &m); err != nil {
-			continue
-		}
-		env := c.frameToEnvelope(m)
+	for ev := range c.conn.Events() {
+		env := c.eventToEnvelope(ev)
 		if env != nil {
 			c.recvCh <- env
 		}
 	}
 }
 
-func (c *remoteConnController) frameToEnvelope(m map[string]any) *proto.Envelope {
-	evType, _ := m["ev"].(string)
-	name, _ := m["name"].(string)
-	text, _ := m["text"].(string)
-	to, _ := m["to"].(string)
-	reason, _ := m["reason"].(string)
-
-	switch evType {
-	case "peers":
-		raw, _ := m["peers"].([]any)
-		peers := make([]string, 0, len(raw))
-		for _, item := range raw {
-			pm, _ := item.(map[string]any)
-			n, _ := pm["name"].(string)
-			if n != "" {
-				peers = append(peers, n)
+func (c *remoteConnController) eventToEnvelope(ev control.Event) *proto.Envelope {
+	switch ev.Kind {
+	case control.KindPeers:
+		names := make([]string, 0, len(ev.Peers))
+		for _, p := range ev.Peers {
+			if p.Name != "" {
+				names = append(names, p.Name)
 			}
 		}
 		c.mu.Lock()
-		c.peers = peers
+		c.peers = names
 		c.mu.Unlock()
-		return nil // handled locally
-
-	case "peer-join":
+		return nil
+	case control.KindPeerJoin:
 		c.mu.Lock()
-		c.peers = append(c.peers, name)
+		c.peers = append(c.peers, ev.Name)
 		c.mu.Unlock()
-		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvJoin, Name: name})
+		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvJoin, Name: ev.Name})
 		return &proto.Envelope{Type: proto.TypeSystem, Payload: p}
-
-	case "peer-leave":
+	case control.KindPeerLeave:
 		c.mu.Lock()
-		c.peers = removeStr(c.peers, name)
+		c.peers = removeStr(c.peers, ev.Name)
 		c.mu.Unlock()
-		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvLeave, Name: name})
+		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvLeave, Name: ev.Name})
 		return &proto.Envelope{Type: proto.TypeSystem, Payload: p}
-
-	case "kick":
-		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvKick, Name: name, Message: reason})
+	case control.KindKick:
+		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvKick, Name: ev.Name, Message: ev.Reason})
 		return &proto.Envelope{Type: proto.TypeSystem, Payload: p}
-
-	case "chat":
-		p, _ := json.Marshal(proto.ChatPayload{Text: text})
-		return &proto.Envelope{Type: proto.TypeChat, From: name, Payload: p}
-
-	case "chat-direct":
-		p, _ := json.Marshal(proto.ChatPayload{Text: text, To: to})
-		return &proto.Envelope{Type: proto.TypeChat, From: name, To: to, Payload: p}
-
-	case "say":
-		p, _ := json.Marshal(proto.ChatPayload{Text: text})
+	case control.KindChat:
+		p, _ := json.Marshal(proto.ChatPayload{Text: ev.Text})
+		return &proto.Envelope{Type: proto.TypeChat, From: ev.Name, Payload: p}
+	case control.KindChatDirect:
+		p, _ := json.Marshal(proto.ChatPayload{Text: ev.Text, To: ev.To})
+		return &proto.Envelope{Type: proto.TypeChat, From: ev.Name, To: ev.To, Payload: p}
+	case control.KindSay:
+		p, _ := json.Marshal(proto.ChatPayload{Text: ev.Text})
 		return &proto.Envelope{Type: proto.TypeChat, From: "server", Payload: p}
-
-	case "motd-changed":
-		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvMotd, Message: text})
+	case control.KindMotd:
+		p, _ := json.Marshal(proto.SystemPayload{Event: proto.EvMotd, Message: ev.Text})
 		return &proto.Envelope{Type: proto.TypeSystem, Payload: p}
-
-	case "bye":
+	case control.KindBye:
 		p, _ := json.Marshal(proto.KickPayload{Reason: "server disconnected"})
 		return &proto.Envelope{Type: proto.TypeKick, Payload: p}
 	}

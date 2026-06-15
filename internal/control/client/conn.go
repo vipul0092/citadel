@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/vipul0092/citadel/internal/control"
 	"github.com/vipul0092/citadel/internal/proto"
 )
 
@@ -98,5 +99,54 @@ func (c *Conn) readLoop() {
 		case <-c.done:
 			return
 		}
+	}
+}
+
+// Subscriber is a subscribed control-plane connection that delivers decoded
+// control.Events. Created by DialAndSubscribe; the caller must Close() when done.
+type Subscriber struct {
+	conn     *Conn
+	eventsCh chan control.Event
+	Hello    HelloEv
+}
+
+// DialAndSubscribe dials sockPath, sends a subscribe op at the given level and
+// since-sequence, and returns a Subscriber whose Events channel delivers decoded
+// control.Events. The caller must Close() when done.
+func DialAndSubscribe(sockPath, level string, since int) (*Subscriber, error) {
+	conn, err := Dial(sockPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.Send(map[string]any{"op": "subscribe", "level": level, "since": since}); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("subscribe: %w", err)
+	}
+	s := &Subscriber{
+		conn:     conn,
+		eventsCh: make(chan control.Event, 64),
+		Hello:    conn.Hello,
+	}
+	go s.decode()
+	return s, nil
+}
+
+// Events returns the channel of decoded control events. Closed when the connection closes.
+func (s *Subscriber) Events() <-chan control.Event { return s.eventsCh }
+
+// Send marshals v to JSON and writes it as a length-prefixed frame.
+func (s *Subscriber) Send(v any) error { return s.conn.Send(v) }
+
+// Close stops the subscriber and closes the underlying connection.
+func (s *Subscriber) Close() { s.conn.Close() }
+
+func (s *Subscriber) decode() {
+	defer close(s.eventsCh)
+	for frame := range s.conn.Events() {
+		ev, err := control.Decode(frame)
+		if err != nil {
+			continue
+		}
+		s.eventsCh <- ev
 	}
 }

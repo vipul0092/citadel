@@ -87,7 +87,7 @@ func runClientHeadless(serverAddr, name, version string) {
 	ptr, err := control.WriteClientPointer(
 		conn.ControlSockPath(),
 		conn.Addr(),
-		conn.ServerName,
+		conn.ServerName(),
 		conn.Name(),
 	)
 	if err != nil {

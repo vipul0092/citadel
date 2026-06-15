@@ -28,7 +28,7 @@ const (
 
 type instanceEvent struct {
 	sockPath string
-	raw      []byte
+	ev       control.Event
 }
 
 type killTimerMsg struct{ sockPath string }
@@ -41,12 +41,12 @@ type pendingRestart struct{ args []string }
 // Instance represents one running citadel process tracked by the dashboard.
 type Instance struct {
 	Info      control.SentinelInfo
-	conn      *ctrlclient.Conn
+	conn      *ctrlclient.Subscriber
 	peerCount int
 	starred   bool
-	// live is set true when ev:"live" is received, marking the end of ring-buffer
+	// live is set true when KindLive is received, marking the end of ring-buffer
 	// replay. peer-join/peer-leave increments are only applied after that point;
-	// replayed events are ignored so they don't overcount the ev:"peers" snapshot.
+	// replayed events are ignored so they don't overcount the KindPeers snapshot.
 	live bool
 }
 
@@ -124,31 +124,24 @@ func (m DashboardModel) reconcile(fresh []control.SentinelInfo) DashboardModel {
 }
 
 func (m DashboardModel) applyEvent(ev instanceEvent) DashboardModel {
-	var frame map[string]any
-	if err := json.Unmarshal(ev.raw, &frame); err != nil {
-		return m
-	}
-	evType, _ := frame["ev"].(string)
-
 	instances := make([]Instance, len(m.instances))
 	copy(instances, m.instances)
 	for i := range instances {
 		if instances[i].Info.SockPath != ev.sockPath {
 			continue
 		}
-		switch evType {
-		case "live":
+		switch ev.ev.Kind {
+		case control.KindLive:
 			instances[i].live = true
-		case "peers":
+		case control.KindPeers:
 			// Authoritative snapshot from list-peers — always trust it.
-			peers, _ := frame["peers"].([]any)
-			instances[i].peerCount = len(peers)
-		case "peer-join":
+			instances[i].peerCount = len(ev.ev.Peers)
+		case control.KindPeerJoin:
 			// Only apply incremental changes once we're past the ring-buffer replay.
 			if instances[i].live {
 				instances[i].peerCount++
 			}
-		case "peer-leave", "kick":
+		case control.KindPeerLeave, control.KindKick:
 			if instances[i].live && instances[i].peerCount > 0 {
 				instances[i].peerCount--
 			}
@@ -237,20 +230,19 @@ func starredPids() map[int]bool {
 	return pids
 }
 
-func openSubscription(sockPath string, eventsCh chan instanceEvent) *ctrlclient.Conn {
-	conn, err := ctrlclient.Dial(sockPath)
+func openSubscription(sockPath string, eventsCh chan instanceEvent) *ctrlclient.Subscriber {
+	sub, err := ctrlclient.DialAndSubscribe(sockPath, "summary", 0)
 	if err != nil {
 		return nil
 	}
-	// Subscribe at summary level + request current peer list.
-	_ = conn.Send(map[string]any{"op": "subscribe", "level": "summary", "since": 0})
-	_ = conn.Send(map[string]any{"op": "list-peers"})
+	// Request current peer list after subscribing.
+	_ = sub.Send(map[string]any{"op": "list-peers"})
 
 	go func() {
-		for frame := range conn.Events() {
-			eventsCh <- instanceEvent{sockPath: sockPath, raw: frame}
+		for ev := range sub.Events() {
+			eventsCh <- instanceEvent{sockPath: sockPath, ev: ev}
 		}
 	}()
-	return conn
+	return sub
 }
 

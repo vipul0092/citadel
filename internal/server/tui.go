@@ -103,11 +103,6 @@ func (m *TUI) SetReadOnly(v bool) {
 	}
 }
 
-// NewTUI creates the server admin TUI backed by an in-process Hub.
-func NewTUI(hub *Hub, serverName, listenAddr, version string) *TUI {
-	return NewTUIFromSource(NewInProcessSource(hub), serverName, listenAddr, version)
-}
-
 // NewTUIFromSource creates the server admin TUI backed by any HubEventSource.
 // Used by the dashboard for remote drill-in.
 func NewTUIFromSource(source HubEventSource, serverName, listenAddr, version string) *TUI {

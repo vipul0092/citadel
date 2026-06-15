@@ -25,10 +25,11 @@ type Config struct {
 type Server struct {
 	cfg        Config
 	hub        *Hub
+	fanOut     *fanOutEmitter
 	log        *ActivityLog
 	listener   net.Listener
 	ctrl       *control.Plane
-	listenAddr string      // set in Run() after bind; safe after bindReady is closed
+	listenAddr string       // set in Run() after bind; safe after bindReady is closed
 	bindReady  chan struct{} // closed after net.Listen succeeds
 }
 
@@ -38,12 +39,19 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening activity log: %w", err)
 	}
-	hub := NewHub(cfg.MaxClients, cfg.Motd, actLog)
-	return &Server{cfg: cfg, hub: hub, log: actLog, bindReady: make(chan struct{})}, nil
+	fanOut := newFanOutEmitter()
+	hub := NewHub(cfg.MaxClients, cfg.Motd, actLog, fanOut)
+	return &Server{cfg: cfg, hub: hub, fanOut: fanOut, log: actLog, bindReady: make(chan struct{})}, nil
 }
 
-// Hub returns the hub so the TUI can subscribe to events and dispatch commands.
+// Hub returns the hub so actions providers can dispatch commands.
 func (s *Server) Hub() *Hub { return s.hub }
+
+// EventSource returns a HubEventSource that combines the hub (for commands) with
+// the TUI events channel (for event receipt). Used by the server TUI.
+func (s *Server) EventSource() HubEventSource {
+	return NewInProcessSource(s.hub, s.fanOut.TUIEvents())
+}
 
 // WaitListenAddr blocks until net.Listen has bound and returns the actual listen
 // address (including the OS-assigned port when --port 0 is used).
@@ -73,7 +81,8 @@ func (s *Server) Run(ctx context.Context) error {
 	close(s.bindReady) // unblock WaitListenAddr callers
 	slog.Info("server listening", "name", s.cfg.Name, "addr", listenAddr)
 
-	ctrl, err := control.New("server", s.cfg.Name, listenAddr, s.cfg.Version, s.cfg.Name, NewActionsProvider(s.hub))
+	sa := NewActionsProvider(s.hub)
+	ctrl, err := control.New("server", s.cfg.Name, listenAddr, s.cfg.Version, s.cfg.Name, control.RoleActions{Common: sa, Server: sa})
 	if err != nil {
 		slog.Warn("control plane start failed", "err", err)
 	} else {
@@ -117,7 +126,7 @@ func (s *Server) Run(ctx context.Context) error {
 // bridgeHubEvents reads HubEvents from the control-events channel and forwards them
 // to the control-plane hub as typed control events.
 func (s *Server) bridgeHubEvents() {
-	for ev := range s.hub.ControlEvents {
+	for ev := range s.fanOut.ControlEvents() {
 		if s.ctrl == nil {
 			return
 		}

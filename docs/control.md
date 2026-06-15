@@ -37,7 +37,7 @@ Both files are `0600`. Stale files from a crashed process are cleaned up by any 
 2. **Dial**: `net.Dial("unix", sockPath)` — standard Go; no special library needed.
 3. **Hello**: citadel immediately sends `{"ev":"hello","role":"...","name":"...","version":"..."}`. The attacher reads this to learn what kind of process it has connected to.
 4. **Subscribe**: attacher sends `{"op":"subscribe","level":"full","since":0}`. Citadel replays buffered events from the ring, then sends `{"ev":"live"}`, then streams live events.
-5. **Act**: attacher sends action ops (`kick`, `say`, `send-chat`, etc.). Citadel routes them through the `ActionsProvider` interface into the real server hub or client connection.
+5. **Act**: attacher sends action ops (`kick`, `say`, `send-chat`, etc.). Citadel routes them through role-specific action interfaces (`CommonActions`, `ServerActions`, or `ClientActions` from `control/actions.go`) into the real server hub or client connection.
 
 Multiple attachers can be connected simultaneously. Each gets its own independent subscription state managed by `sub.go`; the hub fan-outs to all of them.
 
@@ -351,8 +351,8 @@ For captain-only operations the game ALSO attaches to `server_sock`:
 
 ## Reference implementation
 
-- `internal/control/` — server-side fanout hub + ring buffer + UDS listener.
-- `internal/control/client/` — Go client library; consumed by dashboard, `citadel test`, integration tests.
+- `internal/control/` — server-side fanout hub + ring buffer + UDS listener. `event.go` owns `EventKind` constants, `Event` struct, and the central `Decode` function.
+- `internal/control/client/` — Go client library. `Conn` provides raw dial+send+recv. `Subscriber` + `DialAndSubscribe(sockPath, level, since)` handle the full dial → subscribe → decode pipeline, delivering `<-chan control.Event` to callers. Consumed by dashboard, `citadel test`, and integration tests.
 - `cmd/citadel/test_*.go` — `citadel test` subcommand wiring.
 
 See [docs/dashboard.md](dashboard.md) for the consumer UX layered on top.

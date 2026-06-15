@@ -20,8 +20,8 @@ type Plane struct {
 //   - name:    server/session name displayed in the dashboard
 //   - addr:    externally-reachable TCP address (e.g. "192.168.1.5:7777")
 //   - version: version string for hello frames
-//   - actions: callbacks for action ops (kick, say, send-chat, etc.); nil = ENOTSUP for all
-func New(role, name, addr, version, serverName string, actions ActionsProvider) (*Plane, error) {
+//   - actions: role-specific action callbacks; Common must be non-nil
+func New(role, name, addr, version, serverName string, actions RoleActions) (*Plane, error) {
 	hub := NewHub()
 
 	sockPath, stop, err := openListener(hub, role, name, version, actions)

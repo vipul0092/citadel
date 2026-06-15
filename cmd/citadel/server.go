@@ -80,7 +80,7 @@ func runServer(args []string) {
 	// Silence slog while the TUI owns the terminal — the TUI shows all events.
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	tui := server.NewTUI(srv.Hub(), *name, listenAddr, versionString())
+	tui := server.NewTUIFromSource(srv.EventSource(), *name, listenAddr, versionString())
 	p := tea.NewProgram(tui, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)

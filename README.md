@@ -124,9 +124,6 @@ mise run changeset
 # 2. Preview what the next release would do
 mise run release:dry-run
 
-# 3. Cut the release (bumps version, updates CHANGELOG, commits, tags locally)
-mise run release
-
-# 4. Push — triggers CI which builds binaries and updates the Homebrew formula
-git push && git push --tags
+# 4. Push — triggers CI which builds binaries, updates the changelog and updates the Homebrew formula
+git push
 ```

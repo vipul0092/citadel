@@ -3,7 +3,7 @@ package control
 // replayPkt carries the replay batch delivered to a new subscriber.
 type replayPkt struct {
 	gap    *gapInfo
-	events []Event
+	events []ringEntry
 }
 
 // sub is the per-attacher subscription state.

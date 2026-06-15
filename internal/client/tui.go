@@ -288,7 +288,7 @@ func (m *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nameErr = msg.err.Error()
 			m.conn = nil
 		} else {
-			m.ctrl = NewInProcessController(m.conn)
+			m.ctrl = m.conn
 			m.serverName = m.ctrl.ServerName()
 			m.state = viewChat
 			m.peers = m.ctrl.Peers()

@@ -22,3 +22,7 @@
 | [0005-control-plane-unix-socket](decisions/0005-control-plane-unix-socket.md) | UDS + length-prefix JSON for local IPC |
 | [0006-session-pointer-files](decisions/0006-session-pointer-files.md) | Session manifest files for game/dashboard discovery |
 | [0007-always-on-control-plane](decisions/0007-always-on-control-plane.md) | Control socket always on; `--headless` toggles TUI only |
+| [0008-typed-control-event-schema](decisions/0008-typed-control-event-schema.md) | Typed `Event` + central `Decode` function eliminate magic-string field parsing |
+| [0009-split-actions-provider](decisions/0009-split-actions-provider.md) | `CommonActions`/`ServerActions`/`ClientActions` replace `ActionsProvider`; `ErrNotSupported` deleted |
+| [0010-hub-event-emitter](decisions/0010-hub-event-emitter.md) | `HubEventEmitter`/`HubLogger` interfaces; `fanOutEmitter` owns both output channels; Hub is a pure router |
+| [0011-control-subscriber](decisions/0011-control-subscriber.md) | `DialAndSubscribe` + `Subscriber` unify dial+subscribe+decode; callers receive typed `control.Event` |

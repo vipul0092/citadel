@@ -19,23 +19,23 @@
  │  UDP directed broadcast         │  │  localhost probe / --server     │
  │                                 │  │                                 │
  │  TCP conn ──▶ Hub               │  │  Conn  (TCP read+write)         │
- │  Hub: broadcast/kick/motd/log   │  │                                 │
- │                                 │◀─┼──── TCP frames ────────────────▶│
- │  HubEvent (lossy non-blocking): │  │  (length-prefixed JSON)         │
- │  ├─ Hub.Events                  │  │                                 │
- │  │   └──▶ Admin TUI             │  │  Envelope delivery:             │
- │  │        (TUI mode only;       │  │  ├─ conn.recvCh                 │
- │  │         omitted: headless)   │  │  │   └──▶ Chat TUI              │
- │  └─ Hub.ControlEvents           │  │  │        (TUI mode only;       │
- │      └──▶ ctrl bridge           │  │  │         omitted: headless)   │
- │            └──▶ control.Hub     │  │  └─ conn.ctrlCh  (lossy tap)   │
- │                  ring(200)      │  │      └──▶ ctrl bridge           │
- │                  + fanout       │  │            └──▶ control.Hub     │
- │            └──▶ UDS listener    │  │                  ring(200)      │
- │                 <pid>.sock      │  │                  + fanout       │
- │                 <pid>.json      │  │            └──▶ UDS listener    │
- └─────────────────────────────────┘  │                 <pid>.sock      │
-                                      │                 <pid>.json      │
+ │  Hub: broadcast/kick/motd       │  │                                 │
+ │  (emits via HubEventEmitter)    │◀─┼──── TCP frames ────────────────▶│
+ │                                 │  │  (length-prefixed JSON)         │
+ │  fanOutEmitter (HubEvent):      │  │                                 │
+ │  ├─ TUIEvents()                 │  │  Envelope delivery:             │
+ │  │   └──▶ Admin TUI             │  │  ├─ conn.recvCh                 │
+ │  │        (TUI mode only;       │  │  │   └──▶ Chat TUI              │
+ │  │         omitted: headless)   │  │  │        (TUI mode only;       │
+ │  └─ ControlEvents()             │  │  │         omitted: headless)   │
+ │      └──▶ ctrl bridge           │  │  └─ conn.ctrlCh  (lossy tap)   │
+ │            └──▶ control.Hub     │  │      └──▶ ctrl bridge           │
+ │                  ring(200)      │  │            └──▶ control.Hub     │
+ │                  + fanout       │  │                  ring(200)      │
+ │            └──▶ UDS listener    │  │                  + fanout       │
+ │                 <pid>.sock      │  │            └──▶ UDS listener    │
+ │                 <pid>.json      │  │                 <pid>.sock      │
+ └─────────────────────────────────┘  │                 <pid>.json      │
                                       └─────────────────────────────────┘
          │ UDS (JSON ops + events)             │ UDS (JSON ops + events)
          │ subscribe · list-peers              │ subscribe · list-peers
@@ -78,27 +78,28 @@ Control plane infrastructure shared by server and client.
 - `sentinel.go` — writes `~/.citadel/run/<pid>.json` on startup, removes it on shutdown.
 - `scanner.go` — `ScanSentinels`, `WaitForSentinel` (used by `citadel host` and integration tests).
 - `pointer.go` — `WriteClientPointer` / `WriteHostPointer` for session manifest files.
-- `actions.go` — `ActionsProvider` interface (implemented by server and client packages; no import cycle).
-- `client/conn.go` — minimal UDS client: dial, send JSON ops, receive event frames. Used by `citadel test`, `citadel dashboard`, and integration tests.
+- `actions.go` — `CommonActions`, `ServerActions`, `ClientActions` interfaces and `RoleActions` bundle struct. Server and client packages implement the role-specific subset; no import cycle.
+- `event.go` — `EventKind` constants, `Event` struct, and the central `Decode(frame []byte) (Event, error)` function. All typed event parsing lives here.
+- `client/conn.go` — UDS client: `Conn` (dial, send JSON ops, receive raw frames) and `Subscriber` + `DialAndSubscribe` (dial + subscribe op + decoded `<-chan control.Event`). Used by `citadel test`, `citadel dashboard`, and integration tests.
 
 ### `internal/server/`
 - `server.go` — TCP listener, SIGINT shutdown, mDNS + UDP broadcast lifetime. Creates a `control.Plane` after bind; exposes `WaitListenAddr` so the command layer can retrieve the actual port when `--port 0` is used.
-- `hub.go` — owns the `name → *clientConn` map via a goroutine + channels (no mutexes on shared state). Handles register/unregister/broadcast/direct/kick. Fans out `HubEvent` to both TUI (`Events`) and control-plane bridge (`ControlEvents`).
+- `hub.go` — owns the `name → *clientConn` map via a goroutine + channels (no mutexes on shared state). Handles register/unregister/broadcast/direct/kick. Emits `HubEvent` through the `HubEventEmitter` interface (production: `fanOutEmitter`). Logs through `HubLogger` (production: `*ActivityLog`). Neither output channel lives on Hub itself.
 - `client.go` — one goroutine reads frames from the socket, another drains the outbound queue (64 messages; overflow kicks the client).
 - `log.go` — JSON-lines activity logger to `~/.citadel/<name>/activity.log`.
 - `tui.go` — Bubble Tea admin interface: status bar, client list, activity log pane, command input. Backed by `HubEventSource` (in-process or remote via control socket). Remote (dashboard drill-in) instances are **read-only**: input is disabled and replaced with a spectator indicator.
-- `source.go` — `HubEventSource` interface + `inProcessSource` (wraps `*Hub`) + `remoteSource` (dials control socket; used by dashboard drill-in).
-- `actions.go` — `serverActions`: `ActionsProvider` implementation wrapping `*Hub`.
+- `source.go` — `HubEventSource` interface + `inProcessSource` (combines `*Hub` for commands with `fanOutEmitter.TUIEvents()` for events) + `remoteSource` (subscribes via control socket; used by dashboard drill-in). `Server.EventSource()` wires the in-process adapter.
+- `actions.go` — `serverActions`: implements `CommonActions` + `ServerActions`, wrapping `*Hub`.
 
 ### `internal/client/`
 - `conn.go` — dial, hello/welcome handshake, frame read/write goroutines. Creates a `control.Plane` after handshake; fans out received envelopes to the control bridge.
 - `commands.go` — slash command parser (`/who`, `/msg`, `/quit`, `/help`).
 - `tui.go` — Bubble Tea client: discovery view → name-prompt view → split-pane chat view. Backed by `ConnController` (in-process or remote via control socket). Remote (dashboard drill-in) instances are **read-only**: input is disabled and replaced with a spectator indicator.
-- `source.go` — `ConnController` interface + `inProcessController` (wraps `*Conn`) + `remoteConnController` (dials control socket; used by dashboard drill-in).
-- `actions.go` — `connActions`: `ActionsProvider` implementation wrapping `*Conn`.
+- `source.go` — `ConnController` interface. `*Conn` directly satisfies it for the in-process TUI. `remoteConnController` subscribes via control socket for dashboard drill-in.
+- `actions.go` — `connActions`: implements `CommonActions` + `ClientActions`, wrapping `*Conn`.
 
 ### `internal/dashboard/`
-- `model.go` — `DashboardModel`: scans `~/.citadel/run/` every 2 s, shows a live table of running processes, supports [Enter] drill-in to a **read-only spectator** view of any server or client TUI. Peer count uses `ev:"peers"` as the authoritative snapshot and only applies incremental `peer-join`/`peer-leave` after `ev:"live"` (avoids ring-buffer replay overcounting).
+- `model.go` — `DashboardModel`: scans `~/.citadel/run/` every 2 s, shows a live table of running processes, supports [Enter] drill-in to a **read-only spectator** view of any server or client TUI. Each instance opens a `control/client.Subscriber` at `summary` level. Peer count uses `control.KindPeers` as the authoritative snapshot and only applies incremental `KindPeerJoin`/`KindPeerLeave` after `KindLive` (avoids ring-buffer replay overcounting).
 - `actions.go` — spawn/kill/restart helpers: `spawnDetached` (uses `os.Executable()` + `Setpgid:true`), `startKill` (shutdown op + 3 s SIGTERM fallback), `doRestart`.
 
 ### `cmd/citadel/`

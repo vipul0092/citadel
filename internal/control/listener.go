@@ -14,7 +14,7 @@ import (
 
 // openListener creates the UDS socket at ~/.citadel/run/<pid>.sock, starts the accept loop,
 // and returns the socket path and a stop function.
-func openListener(hub *Hub, role, name, version string, actions ActionsProvider) (sockPath string, stop func(), err error) {
+func openListener(hub *Hub, role, name, version string, actions RoleActions) (sockPath string, stop func(), err error) {
 	dir, err := RunDir()
 	if err != nil {
 		return "", nil, err
@@ -74,7 +74,7 @@ func openListener(hub *Hub, role, name, version string, actions ActionsProvider)
 //  1. Send hello immediately.
 //  2. Start a reader goroutine that parses op frames and pushes raw JSON to opsCh.
 //  3. Main loop selects over opsCh / active subscription channels / stopCh.
-func serveAttacher(conn net.Conn, hub *Hub, role, name, version string, actions ActionsProvider, stopCh <-chan struct{}) {
+func serveAttacher(conn net.Conn, hub *Hub, role, name, version string, actions RoleActions, stopCh <-chan struct{}) {
 	defer func() { _ = conn.Close() }()
 
 	// Send hello.
@@ -215,7 +215,7 @@ func handleOp(
 	raw []byte,
 	hub *Hub,
 	conn net.Conn,
-	actions ActionsProvider,
+	actions RoleActions,
 	sp **sub,
 	replayCh *<-chan replayPkt,
 	liveCh *<-chan []byte,
@@ -289,11 +289,7 @@ func handleOp(
 		return fmt.Errorf("shutdown")
 
 	case "list-peers":
-		if actions == nil {
-			notsup(op)
-			return nil
-		}
-		peers := actions.ListPeers()
+		peers := actions.Common.ListPeers()
 		frame, err := buildSimpleFrame(struct {
 			Ev    string     `json:"ev"`
 			Peers []PeerInfo `json:"peers"`
@@ -303,7 +299,7 @@ func handleOp(
 		}
 
 	case "kick":
-		if actions == nil {
+		if actions.Server == nil {
 			notsup(op)
 			return nil
 		}
@@ -312,13 +308,9 @@ func handleOp(
 			Reason string `json:"reason"`
 		}
 		_ = json.Unmarshal(raw, &req)
-		ok, err := actions.KickPeer(req.Name, req.Reason)
+		ok, err := actions.Server.KickPeer(req.Name, req.Reason)
 		if err != nil {
-			if err == ErrNotSupported {
-				notsup(op)
-			} else {
-				sendError("EINTERNAL", err.Error())
-			}
+			sendError("EINTERNAL", err.Error())
 			return nil
 		}
 		if !ok {
@@ -326,7 +318,7 @@ func handleOp(
 		}
 
 	case "say":
-		if actions == nil {
+		if actions.Server == nil {
 			notsup(op)
 			return nil
 		}
@@ -334,16 +326,12 @@ func handleOp(
 			Text string `json:"text"`
 		}
 		_ = json.Unmarshal(raw, &req)
-		if err := actions.SayAll(req.Text); err != nil {
-			if err == ErrNotSupported {
-				notsup(op)
-			} else {
-				sendError("EINTERNAL", err.Error())
-			}
+		if err := actions.Server.SayAll(req.Text); err != nil {
+			sendError("EINTERNAL", err.Error())
 		}
 
 	case "set-motd":
-		if actions == nil {
+		if actions.Server == nil {
 			notsup(op)
 			return nil
 		}
@@ -351,16 +339,12 @@ func handleOp(
 			Text string `json:"text"`
 		}
 		_ = json.Unmarshal(raw, &req)
-		if err := actions.SetMotd(req.Text); err != nil {
-			if err == ErrNotSupported {
-				notsup(op)
-			} else {
-				sendError("EINTERNAL", err.Error())
-			}
+		if err := actions.Server.SetMotd(req.Text); err != nil {
+			sendError("EINTERNAL", err.Error())
 		}
 
 	case "send-chat":
-		if actions == nil {
+		if actions.Client == nil {
 			notsup(op)
 			return nil
 		}
@@ -369,16 +353,12 @@ func handleOp(
 			To   string `json:"to"`
 		}
 		_ = json.Unmarshal(raw, &req)
-		if err := actions.SendChat(req.Text, req.To); err != nil {
-			if err == ErrNotSupported {
-				notsup(op)
-			} else {
-				sendError("EINTERNAL", err.Error())
-			}
+		if err := actions.Client.SendChat(req.Text, req.To); err != nil {
+			sendError("EINTERNAL", err.Error())
 		}
 
 	case "send-game":
-		if actions == nil {
+		if actions.Client == nil {
 			notsup(op)
 			return nil
 		}
@@ -388,12 +368,8 @@ func handleOp(
 			Data json.RawMessage `json:"data"`
 		}
 		_ = json.Unmarshal(raw, &req)
-		if err := actions.SendGame(req.Kind, req.To, req.Data); err != nil {
-			if err == ErrNotSupported {
-				notsup(op)
-			} else {
-				sendError("EINTERNAL", err.Error())
-			}
+		if err := actions.Client.SendGame(req.Kind, req.To, req.Data); err != nil {
+			sendError("EINTERNAL", err.Error())
 		}
 
 	default:

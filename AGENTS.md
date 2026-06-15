@@ -40,7 +40,10 @@ All workflows go through Mise tasks defined in `mise.toml`:
 mise run build   # build the citadel binary with version timestamp
 mise run test    # run all tests
 mise run lint    # run golangci-lint
+mise run verify  # end-to-end smoke test (server + client + control plane)
 mise run clean   # remove build artifacts
 ```
 
 **Quality gate**: every change must pass `mise run build`, `mise run test`, and `mise run lint` before it is considered complete. Run all three after any code change.
+
+**End-to-end verification**: run `mise run verify` after changes that touch the server, client, hub, or control plane. It starts real headless processes and exercises five control-plane scenarios (peer-join, list-peers, chat, say, kick). See `docs/testing.md` for details.

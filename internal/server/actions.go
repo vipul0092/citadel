@@ -1,15 +1,13 @@
 package server
 
 import (
-	"encoding/json"
-
 	"github.com/vipul0092/citadel/internal/control"
 )
 
 type serverActions struct{ hub *Hub }
 
-// NewActionsProvider returns a control.ActionsProvider backed by the server Hub.
-func NewActionsProvider(h *Hub) control.ActionsProvider { return &serverActions{hub: h} }
+// NewActionsProvider returns an actions implementation backed by the server Hub.
+func NewActionsProvider(h *Hub) *serverActions { return &serverActions{hub: h} }
 
 func (a *serverActions) ListPeers() []control.PeerInfo {
 	peers := a.hub.Peers()
@@ -36,12 +34,4 @@ func (a *serverActions) SayAll(text string) error {
 func (a *serverActions) SetMotd(text string) error {
 	a.hub.SetMotd(text)
 	return nil
-}
-
-func (a *serverActions) SendChat(_, _ string) error {
-	return control.ErrNotSupported
-}
-
-func (a *serverActions) SendGame(_, _ string, _ json.RawMessage) error {
-	return control.ErrNotSupported
 }

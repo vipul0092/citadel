@@ -11,7 +11,7 @@ import (
 //	{"ev":"<kind>","seq":<n>,"at":"<rfc3339>",<kind-specific fields>}
 //
 // The kind-specific payload is spread into the top-level object.
-func buildEventFrame(ev Event) ([]byte, error) {
+func buildEventFrame(ev ringEntry) ([]byte, error) {
 	type header struct {
 		Ev  string `json:"ev"`
 		Seq uint64 `json:"seq"`
